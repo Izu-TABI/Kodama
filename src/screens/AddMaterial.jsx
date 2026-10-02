@@ -1,7 +1,7 @@
-import { useMemo, useRef, useState } from 'react';
-import { parseTranscript } from '../lib/transcript.js';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { transcriptToSegments, wordsToSegments, fmtTime } from '../lib/segments.js';
-import { parseVideoId } from '../lib/youtube.js';
+import { parseSource } from '../lib/sources.js';
+import { lookupUrl } from '../lib/lookup.js';
 import { decodeToMono16k, transcribe } from '../lib/asr.js';
 import { createMaterial } from '../lib/db.js';
 import { go } from '../App.jsx';
@@ -9,7 +9,7 @@ import Icon from '../components/Icon.jsx';
 import Segmented from '../components/Segmented.jsx';
 
 export default function AddMaterial({ initialKind }) {
-  const [kind, setKind] = useState(initialKind === 'file' ? 'file' : 'youtube');
+  const [kind, setKind] = useState(initialKind === 'file' ? 'file' : 'url');
   return (
     <main className="page add">
       <header className="masthead">
@@ -19,10 +19,10 @@ export default function AddMaterial({ initialKind }) {
       <Segmented
         label="追加する方法"
         value={kind}
-        options={[['youtube', 'YouTube'], ['file', '音声・動画ファイル']]}
+        options={[['url', 'YouTube・TED'], ['file', '音声・動画ファイル']]}
         onChange={setKind}
       />
-      {kind === 'youtube' ? <FromYouTube /> : <FromFile />}
+      {kind === 'url' ? <FromUrl /> : <FromFile />}
     </main>
   );
 }
@@ -43,87 +43,87 @@ function Preview({ segments }) {
   );
 }
 
-function FromYouTube() {
-  const [url, setUrl] = useState('');
-  const [raw, setRaw] = useState('');
-  const [title, setTitle] = useState('');
-  const [saving, setSaving] = useState(false);
-  const fileInput = useRef(null);
-  const videoId = parseVideoId(url);
-  const lines = useMemo(() => parseTranscript(raw), [raw]);
-  const segments = useMemo(() => transcriptToSegments(lines), [lines]);
+const SOURCE_NAME = { youtube: 'YouTube', ted: 'TED' };
 
-  async function loadCaptionFile(e) {
-    const f = e.target.files?.[0];
-    if (f) setRaw(await f.text());
-    e.target.value = '';
-  }
+function FromUrl() {
+  const [url, setUrl] = useState('');
+  const [state, setState] = useState({ status: 'idle' });
+  const [saving, setSaving] = useState(false);
+  const source = parseSource(url);
+  const sourceKey = source ? `${source.kind}:${source.id}` : '';
+
+  // Fetch the captions as soon as a recognisable URL is in the field.
+  useEffect(() => {
+    if (!sourceKey) { setState({ status: 'idle' }); return; }
+    const ctrl = new AbortController();
+    setState({ status: 'loading' });
+    const t = setTimeout(() => {
+      lookupUrl(url.trim(), ctrl.signal)
+        .then(info => setState({ status: 'ready', info, segments: transcriptToSegments(info.lines, info.duration) }))
+        .catch(e => { if (e.name !== 'AbortError') setState({ status: 'error', message: e.message }); });
+    }, 250);
+    return () => { clearTimeout(t); ctrl.abort(); };
+    // Refetch only when the video itself changes, not on every edit to the URL.
+  }, [sourceKey]);
 
   async function save() {
+    const { info, segments } = state;
     setSaving(true);
-    const last = segments[segments.length - 1];
     const m = await createMaterial({
-      kind: 'youtube',
-      videoId,
-      title: title.trim(),
-      duration: last.end,
+      kind: info.kind,
+      title: info.title,
+      author: info.author,
+      duration: info.duration,
+      thumbnail: info.thumbnail,
+      sourceUrl: url.trim(),
       segments,
+      ...(info.kind === 'youtube' ? { videoId: info.videoId } : { slug: info.slug, hlsUrl: info.hlsUrl }),
     });
     go(`m/${m.id}`);
   }
 
   return (
-    <form className="form" onSubmit={e => { e.preventDefault(); save(); }}>
+    <form className="form" onSubmit={e => { e.preventDefault(); if (state.status === 'ready') save(); }}>
       <label className="field">
         <span className="field-label">動画のURL</span>
         <input
           type="url"
           inputMode="url"
-          placeholder="https://www.youtube.com/watch?v=…"
+          placeholder="https://www.youtube.com/watch?v=…　または　https://www.ted.com/talks/…"
           value={url}
           onChange={e => setUrl(e.target.value)}
           autoFocus
         />
-        {url && !videoId && <span className="field-note warn">YouTubeの動画URLを入れてください</span>}
-      </label>
-      {videoId && (
-        <img className="thumb" src={`https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`} alt="" width="240" height="135" />
-      )}
-
-      <div className="field">
-        <span className="field-label">文字起こし</span>
-        <ol className="steps">
-          <li>YouTubeで動画を開き、説明欄の下にある「文字起こしを表示」を押す</li>
-          <li>出てきた文字起こしを、時刻ごと全部選択してコピーする</li>
-          <li>下の欄に貼り付ける</li>
-        </ol>
-        <textarea
-          rows={8}
-          spellCheck={false}
-          placeholder={'0:00\nSo in college,\n0:03\nI was a government major, …'}
-          value={raw}
-          onChange={e => setRaw(e.target.value)}
-        />
-        <span className="field-note">
-          字幕ファイル（.srt / .vtt）でも使えます。
-          <button type="button" className="link" onClick={() => fileInput.current.click()}>ファイルを読み込む</button>
-          <input ref={fileInput} type="file" accept=".srt,.vtt,.txt,text/vtt" hidden onChange={loadCaptionFile} />
-        </span>
-        {raw.trim() && !lines.length && (
-          <span className="field-note warn">時刻（0:00 のような表記）が見つかりません。時刻ごとコピーしてください。</span>
+        {url.trim() && !source && <span className="field-note warn">YouTubeかTEDの動画のURLを入れてください</span>}
+        {!url.trim() && (
+          <span className="field-note">人が作成した英語字幕のある動画が使えます。自動生成の字幕しかない動画は使えません。</span>
         )}
-      </div>
-
-      <Preview segments={segments} />
-
-      <label className="field">
-        <span className="field-label">タイトル</span>
-        <input value={title} onChange={e => setTitle(e.target.value)} placeholder="空欄なら動画のタイトルを使います" />
       </label>
 
-      <div className="form-actions">
-        <button className="button primary" disabled={!videoId || !segments.length || saving}>追加して練習する</button>
-      </div>
+      {state.status === 'loading' && (
+        <p className="field-note loading" aria-live="polite">{SOURCE_NAME[source?.kind]}から字幕を取得しています…</p>
+      )}
+      {state.status === 'error' && <p className="field-note warn" role="alert">{state.message}</p>}
+
+      {state.status === 'ready' && (
+        <>
+          <div className="found">
+            {state.info.thumbnail && <img src={state.info.thumbnail} alt="" width="160" height="90" />}
+            <div className="found-text">
+              <p className="found-title">{state.info.title}</p>
+              <p className="found-meta">
+                {SOURCE_NAME[state.info.kind]}
+                {state.info.author && <><span className="sep">·</span>{state.info.author}</>}
+                <span className="sep">·</span>{fmtTime(state.info.duration)}
+              </p>
+            </div>
+          </div>
+          <Preview segments={state.segments} />
+          <div className="form-actions">
+            <button className="button primary" disabled={saving}>追加して練習する</button>
+          </div>
+        </>
+      )}
     </form>
   );
 }
@@ -142,6 +142,8 @@ function FromFile() {
   const [error, setError] = useState('');
   const [dragging, setDragging] = useState(false);
   const abortRef = useRef(null);
+
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   function pick(f) {
     if (!f) return;
@@ -191,9 +193,11 @@ function FromFile() {
     go(`m/${m.id}`);
   }
 
-  const pct = progress?.stage === 'model' && progress.total
-    ? progress.loaded / progress.total
-    : progress?.stage === 'transcribe' && progress.total ? progress.done / progress.total : null;
+  const pct = useMemo(() => {
+    if (progress?.stage === 'model' && progress.total) return progress.loaded / progress.total;
+    if (progress?.stage === 'transcribe' && progress.total) return progress.done / progress.total;
+    return null;
+  }, [progress]);
 
   return (
     <form className="form" onSubmit={e => { e.preventDefault(); save(); }}>

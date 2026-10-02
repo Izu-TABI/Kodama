@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 const KEY = 'shadowing:prefs';
-const DEFAULTS = { mode: 'single', rate: 1, showText: true };
+const DEFAULTS = { mode: 'single', rate: 1, showText: true, repeat: 1 };
 
 function read() {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch { return DEFAULTS; }

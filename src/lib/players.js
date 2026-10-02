@@ -1,17 +1,38 @@
-// A small common interface over a <video>/<audio> element and the YouTube player:
-// time(), duration(), isPlaying(), play(), pause(), seek(t), setRate(r), destroy().
-import { audioContext } from './audio.js';
+// A small common interface over a <video> element and the YouTube player:
+// time(), duration(), isPlaying(), isPaused(), play(), pause(), seek(t), setRate(r), destroy().
 import { loadYouTubeApi } from './youtube.js';
 
+// Plays an HLS stream in a <video>: with hls.js wherever Media Source exists
+// (some browsers claim native HLS support they don't have), natively otherwise.
+export async function attachHls(video, url, onError) {
+  const { default: Hls } = await import('hls.js');
+  if (!Hls.isSupported()) {
+    if (!video.canPlayType('application/vnd.apple.mpegurl')) throw new Error('このブラウザではこの動画を再生できません');
+    video.src = url;
+    return () => { video.removeAttribute('src'); video.load(); };
+  }
+  const hls = new Hls({ enableWebVTT: false, subtitleDisplay: false, capLevelToPlayerSize: true });
+  hls.on(Hls.Events.ERROR, (_, data) => {
+    if (data.fatal) onError?.('動画を読み込めませんでした。通信状況を確認してください');
+  });
+  hls.loadSource(url);
+  hls.attachMedia(video);
+  return () => hls.destroy();
+}
+
 export function mediaElementPlayer(el) {
-  let panner = null;
   const waitFor = (event, check) => new Promise(resolve => {
     if (check()) return resolve();
     el.addEventListener(event, resolve, { once: true });
   });
+  const ready = new Promise((resolve, reject) => {
+    if (el.readyState >= 1) return resolve();
+    el.addEventListener('loadedmetadata', resolve, { once: true });
+    el.addEventListener('error', () => reject(new Error('動画・音声を読み込めませんでした')), { once: true });
+  });
   return {
     kind: 'media',
-    ready: waitFor('loadedmetadata', () => el.readyState >= 1),
+    ready,
     time: () => el.currentTime,
     duration: () => el.duration,
     isPlaying: () => !el.paused && !el.ended && el.readyState > 2,
@@ -23,15 +44,6 @@ export function mediaElementPlayer(el) {
     pause: () => el.pause(),
     seek: t => { el.currentTime = t; },
     setRate: r => { el.playbackRate = r; el.preservesPitch = true; },
-    // Routes the element through Web Audio so it can be panned (only done on demand).
-    setPan(value) {
-      if (!panner) {
-        const ac = audioContext();
-        panner = ac.createStereoPanner();
-        ac.createMediaElementSource(el).connect(panner).connect(ac.destination);
-      }
-      panner.pan.value = value;
-    },
     destroy: () => el.pause(),
   };
 }
@@ -73,6 +85,8 @@ export async function youtubePlayer(container, videoId, { onError, onTitle } = {
           if (state === YT.PlayerState.PLAYING) { playingWaiters.forEach(f => f()); playingWaiters.clear(); }
         },
         onPlaybackRateChange: e => { rate = e.data; },
+        // Keep YouTube's own captions off; the script is shown (or hidden) by the app.
+        onApiChange: () => { if (player.getOptions?.().includes('captions')) player.unloadModule?.('captions'); },
         onError: e => {
           const message = YT_ERRORS[e.data] || '動画を再生できませんでした';
           onError?.(message);
@@ -107,7 +121,6 @@ export async function youtubePlayer(container, videoId, { onError, onTitle } = {
       player.setPlaybackRate(r);
       rate = player.getPlaybackRate?.() ?? r;
     },
-    setPan: null,
     destroy: () => { player?.destroy?.(); host.remove(); },
   };
 }
