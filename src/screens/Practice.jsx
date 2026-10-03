@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { getMaterial, saveMaterial, getMedia, saveRecording, getRecording, pruneRecordings } from '../lib/db.js';
 import { attachHls, mediaElementPlayer, playRange } from '../lib/players.js';
 import { Mic, decodeBlob, playClip, mediaToRecording, audioContext } from '../lib/audio.js';
-import { streamUrl } from '../lib/ted.js';
+import { streamUrl, imageUrl } from '../lib/ted.js';
 import { getTranslator, googleTranslateUrl } from '../lib/translate.js';
 import { loadTranslations, startTranslations, subscribeTranslations, translationState } from '../lib/translations.js';
 import { logPractice } from '../lib/activity.js';
@@ -504,7 +504,7 @@ export default function Practice({ id, initialIndex }) {
     <main className={`practice ${showsVideo ? 'with-video' : 'audio-only'}`}>
       <aside className="stage">
         <header className="masthead">
-          <a className="back" href="#/"><Icon name="back" size={14} />教材</a>
+          <a className="back" href={m.folderId ? `#/f/${m.folderId}` : '#/'}><Icon name="back" size={14} />教材</a>
           <button className="settings-toggle" onClick={() => setSettingsOpen(o => !o)} aria-expanded={settingsOpen}>
             {settingsOpen ? '設定を閉じる' : '設定'}
           </button>
@@ -525,7 +525,13 @@ export default function Practice({ id, initialIndex }) {
         )}
 
         <div className={showsVideo ? 'screen' : 'screen-hidden'}>
-          <video ref={videoRef} src={m.kind === 'file' ? fileUrl ?? undefined : undefined} playsInline preload="auto" />
+          <video
+            ref={videoRef}
+            src={m.kind === 'file' ? fileUrl ?? undefined : undefined}
+            poster={m.kind === 'ted' && m.image ? imageUrl(m.image, 960) : undefined}
+            playsInline
+            preload="auto"
+          />
         </div>
         {!showsVideo && <Timeline segments={segs} index={index} duration={m.duration} onSelect={i => { stopAll(); setIndex(i); }} />}
 

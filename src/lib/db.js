@@ -65,15 +65,16 @@ export async function pruneRecordings(m) {
 }
 
 // ---- Folders ------------------------------------------------------------------
+// Folders nest through parentId (null = top level); materials sit in folderId.
 
 export async function listFolders() {
-  return (await get('folders', meta)) ?? [];
+  return ((await get('folders', meta)) ?? []).map(f => ({ ...f, parentId: f.parentId ?? null }));
 }
 
 const saveFolders = folders => set('folders', folders, meta);
 
-export async function createFolder(name) {
-  const folder = { id: uid(), name, createdAt: Date.now() };
+export async function createFolder(name, parentId = null) {
+  const folder = { id: uid(), name, parentId, createdAt: Date.now() };
   await saveFolders([...(await listFolders()), folder]);
   return folder;
 }
@@ -82,10 +83,18 @@ export async function renameFolder(id, name) {
   await saveFolders((await listFolders()).map(f => (f.id === id ? { ...f, name } : f)));
 }
 
-// The folder goes; its materials stay, unfiled.
-export async function deleteFolder(id) {
-  await saveFolders((await listFolders()).filter(f => f.id !== id));
-  for (const m of await listMaterials()) {
-    if (m.folderId === id) await saveMaterial({ ...m, folderId: null });
+// Moves folders and materials into `target` (null = top level).
+export async function moveItems({ folderIds = [], materialIds = [] }, target) {
+  if (folderIds.length) {
+    const ids = new Set(folderIds);
+    await saveFolders((await listFolders()).map(f => (ids.has(f.id) ? { ...f, parentId: target } : f)));
   }
+  for (const id of materialIds) await updateMaterial(id, { folderId: target });
+}
+
+// Deletes folders together with everything inside them.
+export async function deleteFolders(folderIds, materialIds) {
+  for (const id of materialIds) await deleteMaterial(id);
+  const gone = new Set(folderIds);
+  await saveFolders((await listFolders()).filter(f => !gone.has(f.id)));
 }

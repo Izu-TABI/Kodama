@@ -13,8 +13,26 @@ export function streamUrl(stream, file = 'manifest.m3u8') {
 }
 
 export function decodeTalk(row, order) {
-  const [slug, title, speaker, duration, year, views, stream, kind, ja] = row;
-  return { slug, title, speaker, duration, year, views, stream, kind, ja: !!ja, order };
+  const [slug, title, speaker, duration, year, views, stream, kind, ja, image = ''] = row;
+  return { slug, title, speaker, duration, year, views, stream, kind, ja: !!ja, image, order };
+}
+
+const RESIZER = 'https://pi.tedcdn.com/r/';
+const IMAGE_PREFIX = {
+  'p:': `${RESIZER}talkstar-photos.s3.amazonaws.com/uploads/`,
+  'a:': `${RESIZER}talkstar-assets.s3.amazonaws.com/production/talks/`,
+  'e:': `${RESIZER}pe.tedcdn.com/images/ted/`,
+  'r:': RESIZER,
+};
+
+// A talk's thumbnail through TED's image resizer, about `width` pixels wide
+// (the original files run to megabytes).
+export function imageUrl(packed, width) {
+  if (!packed) return '';
+  const prefix = IMAGE_PREFIX[packed.slice(0, 2)];
+  let url = prefix ? prefix + packed.slice(2) : packed;
+  if (!url.startsWith(RESIZER)) url = RESIZER + url.replace(/^https?:\/\//, '');
+  return width ? `${url}?w=${width}` : url;
 }
 
 let catalogPromise = null;

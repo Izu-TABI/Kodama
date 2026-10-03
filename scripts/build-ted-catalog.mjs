@@ -3,12 +3,12 @@
 // TED's site has no CORS, so the browser can't search it; the catalog is
 // built ahead of time (weekly in CI) and shipped with the app.
 //
-// Row: [slug, title, speaker, seconds, year, views, stream, kind, hasJapanese]
+// Row: [slug, title, speaker, seconds, year, views, stream, kind, hasJapanese, image]
 import { mkdirSync, writeFileSync } from 'node:fs';
 
 const OUT = new URL('../public/ted/catalog.json', import.meta.url);
 const PAGE = 50; // the API's maximum
-const FIELDS = 'slug title presenterDisplayName duration hlsUrl audioInternalLanguageCode publishedAt viewedCount type { name }';
+const FIELDS = 'slug title presenterDisplayName duration hlsUrl audioInternalLanguageCode publishedAt viewedCount type { name } primaryImageSet { url aspectRatioName }';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 async function page(after) {
@@ -37,6 +37,15 @@ export function packStream(url) {
   return m ? (m[2] ? `${m[1]}:${m[2]}` : m[1]) : url;
 }
 
+// Thumbnail URLs share long prefixes; keep only what differs.
+export function packImage(url) {
+  return (url || '')
+    .replace('https://pi.tedcdn.com/r/talkstar-photos.s3.amazonaws.com/uploads/', 'p:')
+    .replace('https://pi.tedcdn.com/r/talkstar-assets.s3.amazonaws.com/production/talks/', 'a:')
+    .replace('https://pe.tedcdn.com/images/ted/', 'e:')
+    .replace('https://pi.tedcdn.com/r/', 'r:');
+}
+
 const KIND = { 'TED Stage Talk': 0, 'TEDx Talk': 1, 'TED-Ed Original': 2, 'TED Institute Talk': 3, 'Best of Web': 4, 'Original Content': 5, 'TED Salon Talk': 6 };
 
 // "2597:9294" → the stream's metadata.json (lists its subtitle languages).
@@ -62,6 +71,7 @@ async function subtitleLanguages(stream) {
 }
 
 const talks = [];
+const images = new Map();
 const types = {};
 let after = null, total = 0, skipped = 0;
 do {
@@ -80,6 +90,8 @@ do {
       packStream(n.hlsUrl),
       KIND[n.type?.name] ?? 9,
     ]);
+    const images16x9 = (n.primaryImageSet ?? []).filter(i => i.aspectRatioName === '16x9');
+    images.set(n.slug, packImage((images16x9[0] ?? n.primaryImageSet?.[0])?.url));
   }
   after = v.pageInfo.hasNextPage ? v.pageInfo.endCursor : null;
   process.stdout.write(`\r${talks.length + skipped} / ${total}`);
@@ -94,7 +106,7 @@ await Promise.all(Array.from({ length: 8 }, async () => {
   for (let t; (t = queue.shift());) {
     const langs = await subtitleLanguages(t[6]);
     if (langs && !langs.includes('en')) noEnglish++;
-    else { t.push(langs?.includes('ja') ? 1 : 0); kept.add(t); }
+    else { t.push(langs?.includes('ja') ? 1 : 0, images.get(t[0]) || ''); kept.add(t); }
     if (++checked % 100 === 0) process.stdout.write(`\rsubtitles ${checked} / ${talks.length}`);
   }
 }));

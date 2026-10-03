@@ -18,7 +18,9 @@ export const go = path => { location.hash = `#/${path}`; };
 export default function App() {
   const [page, arg, sub] = useHashRoute();
   useEffect(() => { window.scrollTo(0, 0); }, [page, arg]);
-  if (page === 'add') return <AddMaterial initialKind={arg} folderId={sub} />;
+  if (page === 'add') return <AddMaterial folderId={sub} />;
+  if (page === 'f' && arg) return <Library folderId={arg} />;
+  if (page === 'fav') return <Library view="favorites" />;
   if (page === 'm' && arg) {
     const index = sub != null && /^\d+$/.test(sub) ? Number(sub) : undefined;
     return <Practice key={`${arg}/${sub ?? ''}`} id={arg} initialIndex={index} />;

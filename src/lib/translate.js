@@ -33,3 +33,8 @@ export async function translateOnDevice(text) {
     return null;
   }
 }
+
+// Starts downloading the language pack while a click still counts as one.
+export function warmUpTranslator() {
+  if (canTranslateOnDevice()) getTranslator().catch(() => {});
+}

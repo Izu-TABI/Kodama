@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { streamUrl, decodeTalk, parseTedSlug, searchTalks, alignTranslation, joinJapanese } from './ted.js';
+import { streamUrl, decodeTalk, parseTedSlug, searchTalks, alignTranslation, joinJapanese, imageUrl } from './ted.js';
 import { baseForms, normalizeWord, lookupWord, senses, setDictionaryLoader } from './dict.js';
 import { summarize, dayKey } from './activity.js';
 import { translateMissing, needsMachineTranslation } from './translations.js';
@@ -9,6 +9,15 @@ describe('TED catalog', () => {
     expect(streamUrl('2597:9294')).toBe('https://hls.ted.com/project_masters/2597/manifest.m3u8?intro_master_id=9294');
     expect(streamUrl('12055', 'metadata.json')).toBe('https://hls.ted.com/project_masters/12055/metadata.json');
     expect(streamUrl('https://x.test/a/manifest.m3u8?k=1', 'metadata.json')).toBe('https://x.test/a/metadata.json?k=1');
+  });
+
+  it('expands packed thumbnails', () => {
+    expect(imageUrl('p:abc/x.jpg', 240)).toBe('https://pi.tedcdn.com/r/talkstar-photos.s3.amazonaws.com/uploads/abc/x.jpg?w=240');
+    expect(imageUrl('a:talk_1/y.jpg')).toBe('https://pi.tedcdn.com/r/talkstar-assets.s3.amazonaws.com/production/talks/talk_1/y.jpg');
+    expect(imageUrl('e:abc_2880x1620.jpg', 240)).toBe('https://pi.tedcdn.com/r/pe.tedcdn.com/images/ted/abc_2880x1620.jpg?w=240');
+    expect(imageUrl('https://pe.tedcdn.com/images/other/z.jpg', 120)).toBe('https://pi.tedcdn.com/r/pe.tedcdn.com/images/other/z.jpg?w=120');
+    expect(imageUrl('')).toBe('');
+    expect(decodeTalk(['s', 't', 'p', 1, 2020, 3, '9', 0, 1, 'p:z.jpg'], 0).image).toBe('p:z.jpg');
   });
 
   it('recognises talk URLs', () => {

@@ -1,41 +1,32 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { wordsToSegments, fmtTime } from '../lib/segments.js';
-import { loadCatalog, searchTalks, parseTedSlug, loadTalk, KIND_LABEL } from '../lib/ted.js';
-import { decodeToMono16k, transcribe } from '../lib/asr.js';
+import { useEffect, useMemo, useState } from 'react';
+import { fmtTime } from '../lib/segments.js';
+import { loadCatalog, searchTalks, parseTedSlug, loadTalk, imageUrl, KIND_LABEL } from '../lib/ted.js';
 import { createMaterial, listMaterials, listFolders } from '../lib/db.js';
-import { canTranslateOnDevice, getTranslator } from '../lib/translate.js';
+import { folderPath } from '../lib/tree.js';
+import { canTranslateOnDevice, warmUpTranslator } from '../lib/translate.js';
 import { go } from '../App.jsx';
 import Icon from '../components/Icon.jsx';
 import Segmented from '../components/Segmented.jsx';
 
-// Machine translation starts as soon as the material is added; the click on
-// 追加 lets Chrome download its language pack if it hasn't yet.
-function warmUpTranslator(needed) {
-  if (needed && canTranslateOnDevice()) getTranslator().catch(() => {});
-}
+const PAGE = 30;
+const fmtCount = n => n.toLocaleString('ja-JP');
 
-export default function AddMaterial({ initialKind, folderId }) {
-  const [kind, setKind] = useState(initialKind === 'file' ? 'file' : 'ted');
-  const [folder, setFolder] = useState(null);
-  useEffect(() => {
-    if (folderId) listFolders().then(fs => setFolder(fs.find(f => f.id === folderId) ?? null));
-  }, [folderId]);
+// Adding TED talks. (Audio and video files are read in from the library.)
+export default function AddMaterial({ folderId }) {
+  const [folders, setFolders] = useState([]);
+  useEffect(() => { listFolders().then(setFolders); }, []);
+  const target = folderId && folders.some(f => f.id === folderId) ? folderId : null;
+  const back = target ? `#/f/${target}` : '#/';
+  const path = target ? folderPath(folders, target).map(f => f.name).join(' › ') : '';
+
   return (
     <main className="page add">
       <header className="masthead">
-        <a className="back" href="#/"><Icon name="back" size={14} />教材</a>
+        <a className="back" href={back}><Icon name="back" size={14} />教材</a>
       </header>
-      <h1 className="page-title">教材を追加</h1>
-      <div className="add-head">
-        <Segmented
-          label="追加する方法"
-          value={kind}
-          options={[['ted', 'TEDから選ぶ'], ['file', '音声・動画ファイル']]}
-          onChange={setKind}
-        />
-        {folder && <p className="field-note">追加先：{folder.name}</p>}
-      </div>
-      {kind === 'ted' ? <FromTed folderId={folder?.id ?? null} /> : <FromFile folderId={folder?.id ?? null} />}
+      <h1 className="page-title">TEDから追加</h1>
+      {path && <p className="field-note destination">追加先：{path}</p>}
+      <FromTed folderId={target} />
     </main>
   );
 }
@@ -61,9 +52,6 @@ function Preview({ segments }) {
     </div>
   );
 }
-
-const PAGE = 30;
-const fmtCount = n => n.toLocaleString('ja-JP');
 
 function FromTed({ folderId }) {
   const [catalog, setCatalog] = useState(null);
@@ -113,6 +101,9 @@ function FromTed({ folderId }) {
         <Segmented label="和訳" value={japanese} options={[[false, 'すべて'], [true, 'あり']]} onChange={setJapanese} />
         <Segmented label="並び" value={sort} options={[['new', '新しい順'], ['popular', '人気順']]} onChange={setSort} />
       </div>
+      {!canTranslateOnDevice() && (
+        <p className="field-note">このブラウザでは和訳を自動で作れないので、「和訳あり」のトークがおすすめです。</p>
+      )}
 
       {error && <p className="field-note warn">{error}</p>}
       {!catalog && !error && <p className="field-note loading">TEDのトーク一覧を読み込んでいます…</p>}
@@ -126,14 +117,17 @@ function FromTed({ folderId }) {
             {results.slice(0, limit).map(t => (
               <li key={t.slug}>
                 <button className="talk" onClick={() => setSelected(t)}>
-                  <span className="talk-title">{t.title}</span>
-                  <span className="talk-meta">
-                    {t.speaker}
-                    <span className="sep">·</span>{fmtTime(t.duration)}
-                    {t.year > 0 && <><span className="sep">·</span>{t.year}</>}
-                    {KIND_LABEL[t.kind] && <><span className="sep">·</span>{KIND_LABEL[t.kind]}</>}
-                    {t.ja && <><span className="sep">·</span>和訳あり</>}
-                    {added.has(t.slug) && <><span className="sep">·</span><span className="added">追加済み</span></>}
+                  <span className="talk-thumb">{t.image && <img src={imageUrl(t.image, 240)} alt="" loading="lazy" />}</span>
+                  <span className="talk-text">
+                    <span className="talk-title">{t.title}</span>
+                    <span className="talk-meta">
+                      {t.speaker}
+                      <span className="sep">·</span>{fmtTime(t.duration)}
+                      {t.year > 0 && <><span className="sep">·</span>{t.year}</>}
+                      {KIND_LABEL[t.kind] && <><span className="sep">·</span>{KIND_LABEL[t.kind]}</>}
+                      {t.ja && <><span className="sep">·</span>和訳あり</>}
+                      {added.has(t.slug) && <><span className="sep">·</span><span className="added">追加済み</span></>}
+                    </span>
                   </span>
                 </button>
               </li>
@@ -162,12 +156,14 @@ function TalkDetail({ talk, addedId, folderId, onBack }) {
 
   async function save() {
     setSaving(true);
-    warmUpTranslator(state.segments.some(s => !s.ja));
+    // The click lets Chrome download its translator for the sentences TED hasn't translated.
+    if (state.segments.some(s => !s.ja)) warmUpTranslator();
     const m = await createMaterial({
       folderId,
       kind: 'ted',
       slug: talk.slug,
       stream: talk.stream,
+      image: talk.image,
       title: talk.title,
       author: talk.speaker,
       duration: state.duration,
@@ -180,15 +176,18 @@ function TalkDetail({ talk, addedId, folderId, onBack }) {
   return (
     <div className="form talk-detail">
       <button className="back" onClick={onBack}><Icon name="back" size={14} />一覧に戻る</button>
-      <div>
-        <p className="found-title">{talk.title}</p>
-        <p className="found-meta">
-          TED<span className="sep">·</span>{talk.speaker}
-          <span className="sep">·</span>{fmtTime(talk.duration)}
-          {talk.year > 0 && <><span className="sep">·</span>{talk.year}</>}
-          <span className="sep">·</span>
-          <a href={`https://www.ted.com/talks/${talk.slug}`} target="_blank" rel="noreferrer">ted.com<Icon name="out" size={11} /></a>
-        </p>
+      <div className="talk-hero">
+        {talk.image && <img src={imageUrl(talk.image, 640)} alt="" />}
+        <div>
+          <p className="found-title">{talk.title}</p>
+          <p className="found-meta">
+            TED<span className="sep">·</span>{talk.speaker}
+            <span className="sep">·</span>{fmtTime(talk.duration)}
+            {talk.year > 0 && <><span className="sep">·</span>{talk.year}</>}
+            <span className="sep">·</span>
+            <a href={`https://www.ted.com/talks/${talk.slug}`} target="_blank" rel="noreferrer">ted.com<Icon name="out" size={11} /></a>
+          </p>
+        </div>
       </div>
 
       {state.status === 'loading' && <p className="field-note loading">字幕を読み込んでいます…</p>}
@@ -212,127 +211,5 @@ function TalkDetail({ talk, addedId, folderId, onBack }) {
           : <button className="button primary" onClick={save} disabled={state.status !== 'ready' || saving}>追加して練習する</button>}
       </div>
     </div>
-  );
-}
-
-const STAGE_TEXT = {
-  decode: '音声を読み込んでいます',
-  model: '文字起こしモデルを準備しています（初回のみ）',
-  transcribe: '文字起こししています',
-};
-
-function FromFile({ folderId }) {
-  const [file, setFile] = useState(null);
-  const [title, setTitle] = useState('');
-  const [progress, setProgress] = useState(null);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState('');
-  const [dragging, setDragging] = useState(false);
-  const abortRef = useRef(null);
-
-  useEffect(() => () => abortRef.current?.abort(), []);
-
-  function pick(f) {
-    if (!f) return;
-    if (!/^(audio|video)\//.test(f.type) && !/\.(mp3|m4a|wav|aac|ogg|oga|flac|mp4|m4v|mov|webm)$/i.test(f.name)) {
-      setError('音声か動画のファイルを選んでください');
-      return;
-    }
-    abortRef.current?.abort();
-    setFile(f);
-    setTitle(f.name.replace(/\.[^.]+$/, ''));
-    setResult(null);
-    setError('');
-    run(f);
-  }
-
-  async function run(f) {
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-    try {
-      setProgress({ stage: 'decode' });
-      const { audio, duration } = await decodeToMono16k(f);
-      const words = await transcribe(audio, { signal: ctrl.signal, onProgress: setProgress });
-      const segments = wordsToSegments(words, { duration });
-      if (!segments.length) throw new Error('英語の音声が見つかりませんでした');
-      setResult({ duration, segments });
-    } catch (e) {
-      if (e.name !== 'AbortError') setError(e.message || '文字起こしに失敗しました');
-    } finally {
-      if (abortRef.current === ctrl) setProgress(null);
-    }
-  }
-
-  function cancel() {
-    abortRef.current?.abort();
-    setFile(null);
-    setProgress(null);
-  }
-
-  async function save() {
-    warmUpTranslator(true);
-    const m = await createMaterial({
-      folderId,
-      kind: 'file',
-      title: title.trim() || file.name,
-      mediaType: file.type.startsWith('video/') ? 'video' : 'audio',
-      duration: result.duration,
-      segments: result.segments,
-    }, file);
-    go(`m/${m.id}`);
-  }
-
-  const pct = useMemo(() => {
-    if (progress?.stage === 'model' && progress.total) return progress.loaded / progress.total;
-    if (progress?.stage === 'transcribe' && progress.total) return progress.done / progress.total;
-    return null;
-  }, [progress]);
-
-  return (
-    <form className="form" onSubmit={e => { e.preventDefault(); save(); }}>
-      <label
-        className={`drop ${dragging ? 'over' : ''}`}
-        onDragOver={e => { e.preventDefault(); setDragging(true); }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={e => { e.preventDefault(); setDragging(false); pick(e.dataTransfer.files?.[0]); }}
-      >
-        <input type="file" accept="audio/*,video/*" hidden onChange={e => { pick(e.target.files?.[0]); e.target.value = ''; }} />
-        {file ? <span className="drop-file">{file.name}</span> : <span>音声・動画ファイルを選ぶ</span>}
-        <span className="field-note">mp3・m4a・wav・mp4 など。ここにドロップしても追加できます</span>
-      </label>
-
-      {progress && (
-        <div className="progress" aria-live="polite">
-          <div className="progress-text">
-            <span>{STAGE_TEXT[progress.stage]}</span>
-            <span className="num">
-              {progress.stage === 'model' && progress.total ? `${Math.round(progress.loaded / 1e6)} / ${Math.round(progress.total / 1e6)} MB` : ''}
-              {progress.stage === 'transcribe' ? `${fmtTime(progress.done)} / ${fmtTime(progress.total)}` : ''}
-            </span>
-          </div>
-          <div className="bar"><div style={{ transform: `scaleX(${pct ?? 0})` }} className={pct == null ? 'indeterminate' : ''} /></div>
-          <button type="button" className="quiet-button" onClick={cancel}>中止</button>
-        </div>
-      )}
-      {!result && !progress && (
-        <p className="field-note">
-          音声はこの端末の中で文字起こしされ、外部には送信されません。初回は文字起こし用のデータ（約210MB）を読み込むので、PCでの利用がおすすめです。
-        </p>
-      )}
-      {error && <p className="field-note warn">{error}</p>}
-
-      {result && (
-        <>
-          <Preview segments={result.segments} />
-          <label className="field">
-            <span className="field-label">タイトル</span>
-            <input value={title} onChange={e => setTitle(e.target.value)} />
-          </label>
-          <div className="form-actions">
-            <button className="button primary">追加して練習する</button>
-          </div>
-        </>
-      )}
-    </form>
   );
 }

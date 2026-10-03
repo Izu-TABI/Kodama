@@ -11,6 +11,12 @@ const paths = {
   star: <path d="M8 1.8l1.85 3.95 4.3.5-3.2 2.95.85 4.25L8 11.3l-3.8 2.15.85-4.25-3.2-2.95 4.3-.5z" {...line} strokeWidth="1.3" strokeLinejoin="round" />,
   starred: <path d="M8 1.8l1.85 3.95 4.3.5-3.2 2.95.85 4.25L8 11.3l-3.8 2.15.85-4.25-3.2-2.95 4.3-.5z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />,
   out: <path d="M6 3H3v10h10v-3M9 2.5h4.5V7M13.5 2.5 7.5 8.5" {...line} strokeWidth="1.3" />,
+  folder: <path d="M1.75 3.25h4.5l1.5 1.75h6.5v7.75H1.75z" {...line} strokeWidth="1.3" strokeLinejoin="round" />,
+  audio: <path d="M3 7v2M5.25 5v6M7.5 2.75v10.5M9.75 5.5v5M12 7v2" {...line} strokeWidth="1.4" strokeLinecap="round" />,
+  video: <><rect x="1.75" y="3.25" width="12.5" height="9.5" {...line} strokeWidth="1.3" /><path d="M6.5 6v4l3.5-2z" /></>,
+  disclosure: <path d="M6 4l4.5 4L6 12z" />,
+  check: <path d="M3.5 8.5l3 3 6-7" {...line} strokeWidth="1.7" />,
+  more: <><circle cx="3.5" cy="8" r="1.3" /><circle cx="8" cy="8" r="1.3" /><circle cx="12.5" cy="8" r="1.3" /></>,
 };
 
 export default function Icon({ name, size = 16 }) {
