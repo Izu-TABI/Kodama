@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { transcriptToSegments, wordsToSegments, fmtTime } from '../lib/segments.js';
-import { parseSource } from '../lib/sources.js';
-import { lookupUrl } from '../lib/lookup.js';
+import { wordsToSegments, fmtTime } from '../lib/segments.js';
+import { loadCatalog, searchTalks, parseTedSlug, loadTalk, KIND_LABEL } from '../lib/ted.js';
 import { decodeToMono16k, transcribe } from '../lib/asr.js';
-import { createMaterial } from '../lib/db.js';
+import { createMaterial, listMaterials } from '../lib/db.js';
 import { go } from '../App.jsx';
 import Icon from '../components/Icon.jsx';
 import Segmented from '../components/Segmented.jsx';
 
 export default function AddMaterial({ initialKind }) {
-  const [kind, setKind] = useState(initialKind === 'file' ? 'file' : 'url');
+  const [kind, setKind] = useState(initialKind === 'file' ? 'file' : 'ted');
   return (
     <main className="page add">
       <header className="masthead">
@@ -19,10 +18,10 @@ export default function AddMaterial({ initialKind }) {
       <Segmented
         label="追加する方法"
         value={kind}
-        options={[['url', 'YouTube・TED'], ['file', '音声・動画ファイル']]}
+        options={[['ted', 'TEDから選ぶ'], ['file', '音声・動画ファイル']]}
         onChange={setKind}
       />
-      {kind === 'url' ? <FromUrl /> : <FromFile />}
+      {kind === 'ted' ? <FromTed /> : <FromFile />}
     </main>
   );
 }
@@ -35,7 +34,13 @@ function Preview({ segments }) {
       <p className="preview-head">{segments.length}文に区切りました</p>
       <ol>
         {shown.map((s, i) => (
-          <li key={i}><span className="time">{fmtTime(s.start)}</span><span className="script">{s.text}</span></li>
+          <li key={i}>
+            <span className="time">{fmtTime(s.start)}</span>
+            <span className="preview-text">
+              <span className="script">{s.text}</span>
+              {s.ja && <span className="ja">{s.ja}</span>}
+            </span>
+          </li>
         ))}
       </ol>
       {segments.length > shown.length && <p className="preview-more">ほか {segments.length - shown.length}文</p>}
@@ -43,88 +48,150 @@ function Preview({ segments }) {
   );
 }
 
-const SOURCE_NAME = { youtube: 'YouTube', ted: 'TED' };
+const PAGE = 30;
+const fmtCount = n => n.toLocaleString('ja-JP');
 
-function FromUrl() {
-  const [url, setUrl] = useState('');
-  const [state, setState] = useState({ status: 'idle' });
-  const [saving, setSaving] = useState(false);
-  const source = parseSource(url);
-  const sourceKey = source ? `${source.kind}:${source.id}` : '';
+function FromTed() {
+  const [catalog, setCatalog] = useState(null);
+  const [error, setError] = useState('');
+  const [query, setQuery] = useState('');
+  const [length, setLength] = useState('all');
+  const [japanese, setJapanese] = useState(false);
+  const [sort, setSort] = useState('new');
+  const [limit, setLimit] = useState(PAGE);
+  const [selected, setSelected] = useState(null);
+  const [added, setAdded] = useState(() => new Map());
 
-  // Fetch the captions as soon as a recognisable URL is in the field.
   useEffect(() => {
-    if (!sourceKey) { setState({ status: 'idle' }); return; }
-    const ctrl = new AbortController();
-    setState({ status: 'loading' });
-    const t = setTimeout(() => {
-      lookupUrl(url.trim(), ctrl.signal)
-        .then(info => setState({ status: 'ready', info, segments: transcriptToSegments(info.lines, info.duration) }))
-        .catch(e => { if (e.name !== 'AbortError') setState({ status: 'error', message: e.message }); });
-    }, 250);
-    return () => { clearTimeout(t); ctrl.abort(); };
-    // Refetch only when the video itself changes, not on every edit to the URL.
-  }, [sourceKey]);
+    loadCatalog().then(setCatalog).catch(e => setError(e.message));
+    listMaterials().then(ms => setAdded(new Map(ms.filter(m => m.kind === 'ted').map(m => [m.slug, m.id]))));
+  }, []);
+
+  const slug = parseTedSlug(query);
+  const results = useMemo(() => {
+    if (!catalog) return [];
+    if (slug) return catalog.talks.filter(t => t.slug === slug);
+    return searchTalks(catalog.talks, { query, length, japanese, sort });
+  }, [catalog, slug, query, length, japanese, sort]);
+
+  useEffect(() => { setLimit(PAGE); }, [query, length, japanese, sort]);
+
+  if (selected) {
+    return <TalkDetail talk={selected} addedId={added.get(selected.slug)} onBack={() => setSelected(null)} />;
+  }
+
+  return (
+    <div className="form">
+      <label className="field">
+        <span className="field-label">さがす</span>
+        <input
+          type="search"
+          placeholder="タイトル・話し手（英語）、またはTEDのURL"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          autoFocus
+        />
+      </label>
+      <div className="filters">
+        <Segmented label="長さ" value={length}
+          options={[['all', 'すべて'], ['short', '〜6分'], ['medium', '6〜12分'], ['long', '12〜20分'], ['longer', '20分〜']]}
+          onChange={setLength} />
+        <Segmented label="和訳" value={japanese} options={[[false, 'すべて'], [true, 'あり']]} onChange={setJapanese} />
+        <Segmented label="並び" value={sort} options={[['new', '新しい順'], ['popular', '人気順']]} onChange={setSort} />
+      </div>
+
+      {error && <p className="field-note warn">{error}</p>}
+      {!catalog && !error && <p className="field-note loading">TEDのトーク一覧を読み込んでいます…</p>}
+      {catalog && (
+        <div className="talks">
+          <p className="talks-count">
+            {fmtCount(results.length)}本
+            {slug && !results.length && '　このトークは一覧にありません（一覧は週に1回更新されます）'}
+          </p>
+          <ol>
+            {results.slice(0, limit).map(t => (
+              <li key={t.slug}>
+                <button className="talk" onClick={() => setSelected(t)}>
+                  <span className="talk-title">{t.title}</span>
+                  <span className="talk-meta">
+                    {t.speaker}
+                    <span className="sep">·</span>{fmtTime(t.duration)}
+                    {t.year > 0 && <><span className="sep">·</span>{t.year}</>}
+                    {KIND_LABEL[t.kind] && <><span className="sep">·</span>{KIND_LABEL[t.kind]}</>}
+                    {t.ja && <><span className="sep">·</span>和訳あり</>}
+                    {added.has(t.slug) && <><span className="sep">·</span><span className="added">追加済み</span></>}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ol>
+          {results.length > limit && (
+            <button className="button more" onClick={() => setLimit(l => l + PAGE)}>もっと見る</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TalkDetail({ talk, addedId, onBack }) {
+  const [state, setState] = useState({ status: 'loading' });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    loadTalk(talk)
+      .then(r => alive && setState({ status: 'ready', ...r }))
+      .catch(e => alive && setState({ status: 'error', message: e.message }));
+    return () => { alive = false; };
+  }, [talk]);
 
   async function save() {
-    const { info, segments } = state;
     setSaving(true);
     const m = await createMaterial({
-      kind: info.kind,
-      title: info.title,
-      author: info.author,
-      duration: info.duration,
-      thumbnail: info.thumbnail,
-      sourceUrl: url.trim(),
-      segments,
-      ...(info.kind === 'youtube' ? { videoId: info.videoId } : { slug: info.slug, hlsUrl: info.hlsUrl }),
+      kind: 'ted',
+      slug: talk.slug,
+      stream: talk.stream,
+      title: talk.title,
+      author: talk.speaker,
+      duration: state.duration,
+      segments: state.segments,
+      sourceUrl: `https://www.ted.com/talks/${talk.slug}`,
     });
     go(`m/${m.id}`);
   }
 
   return (
-    <form className="form" onSubmit={e => { e.preventDefault(); if (state.status === 'ready') save(); }}>
-      <label className="field">
-        <span className="field-label">動画のURL</span>
-        <input
-          type="url"
-          inputMode="url"
-          placeholder="https://www.youtube.com/watch?v=…　または　https://www.ted.com/talks/…"
-          value={url}
-          onChange={e => setUrl(e.target.value)}
-          autoFocus
-        />
-        {url.trim() && !source && <span className="field-note warn">YouTubeかTEDの動画のURLを入れてください</span>}
-        {!url.trim() && (
-          <span className="field-note">人が作成した英語字幕のある動画が使えます。自動生成の字幕しかない動画は使えません。</span>
-        )}
-      </label>
+    <div className="form talk-detail">
+      <button className="back" onClick={onBack}><Icon name="back" size={14} />一覧に戻る</button>
+      <div>
+        <p className="found-title">{talk.title}</p>
+        <p className="found-meta">
+          TED<span className="sep">·</span>{talk.speaker}
+          <span className="sep">·</span>{fmtTime(talk.duration)}
+          {talk.year > 0 && <><span className="sep">·</span>{talk.year}</>}
+          <span className="sep">·</span>
+          <a href={`https://www.ted.com/talks/${talk.slug}`} target="_blank" rel="noreferrer">ted.com<Icon name="out" size={11} /></a>
+        </p>
+      </div>
 
-      {state.status === 'loading' && (
-        <p className="field-note loading" aria-live="polite">{SOURCE_NAME[source?.kind]}から字幕を取得しています…</p>
-      )}
-      {state.status === 'error' && <p className="field-note warn" role="alert">{state.message}</p>}
-
+      {state.status === 'loading' && <p className="field-note loading">字幕を読み込んでいます…</p>}
+      {state.status === 'error' && <p className="field-note warn">{state.message}</p>}
       {state.status === 'ready' && (
         <>
-          <div className="found">
-            {state.info.thumbnail && <img src={state.info.thumbnail} alt="" width="160" height="90" />}
-            <div className="found-text">
-              <p className="found-title">{state.info.title}</p>
-              <p className="found-meta">
-                {SOURCE_NAME[state.info.kind]}
-                {state.info.author && <><span className="sep">·</span>{state.info.author}</>}
-                <span className="sep">·</span>{fmtTime(state.info.duration)}
-              </p>
-            </div>
-          </div>
+          <p className="field-note">
+            {state.hasJapanese ? 'TEDの日本語訳があります（ボランティアの翻訳者による訳）' : 'TEDの日本語訳はありません。和訳は機械翻訳になります'}
+          </p>
           <Preview segments={state.segments} />
-          <div className="form-actions">
-            <button className="button primary" disabled={saving}>追加して練習する</button>
-          </div>
         </>
       )}
-    </form>
+
+      <div className="form-actions">
+        {addedId
+          ? <button className="button primary" onClick={() => go(`m/${addedId}`)}>追加済み・練習する</button>
+          : <button className="button primary" onClick={save} disabled={state.status !== 'ready' || saving}>追加して練習する</button>}
+      </div>
+    </div>
   );
 }
 
@@ -226,7 +293,9 @@ function FromFile() {
         </div>
       )}
       {!result && !progress && (
-        <p className="field-note">音声はこの端末の中で文字起こしされ、外部には送信されません。</p>
+        <p className="field-note">
+          音声はこの端末の中で文字起こしされ、外部には送信されません。初回は文字起こし用のデータ（約210MB）を読み込むので、PCでの利用がおすすめです。
+        </p>
       )}
       {error && <p className="field-note warn">{error}</p>}
 

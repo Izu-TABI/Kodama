@@ -16,9 +16,12 @@ function useHashRoute() {
 export const go = path => { location.hash = `#/${path}`; };
 
 export default function App() {
-  const [page, arg] = useHashRoute();
+  const [page, arg, sub] = useHashRoute();
   useEffect(() => { window.scrollTo(0, 0); }, [page, arg]);
   if (page === 'add') return <AddMaterial initialKind={arg} />;
-  if (page === 'm' && arg) return <Practice key={arg} id={arg} />;
+  if (page === 'm' && arg) {
+    const index = sub != null && /^\d+$/.test(sub) ? Number(sub) : undefined;
+    return <Practice key={`${arg}/${sub ?? ''}`} id={arg} initialIndex={index} />;
+  }
   return <Library />;
 }

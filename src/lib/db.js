@@ -1,8 +1,9 @@
-// Everything stays in this browser (IndexedDB): materials and their media files.
-import { createStore, get, set, del, values } from 'idb-keyval';
+// Everything stays in this browser (IndexedDB): materials, their media files and recordings.
+import { createStore, get, set, del, values, keys, delMany } from 'idb-keyval';
 
 const materials = createStore('shadowing-materials', 'materials');
 const media = createStore('shadowing-media', 'media');
+const recordings = createStore('shadowing-recordings', 'recordings');
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
@@ -21,7 +22,7 @@ export async function saveMaterial(m) {
 export async function createMaterial(fields, file) {
   navigator.storage?.persist?.().catch(() => {});
   const id = uid();
-  const m = { id, cursor: 0, createdAt: Date.now(), practicedAt: 0, ...fields };
+  const m = { id, cursor: 0, takes: {}, favorites: [], createdAt: Date.now(), practicedAt: 0, ...fields };
   if (file) {
     m.mediaId = id;
     await set(id, file, media);
@@ -34,5 +35,34 @@ export const getMedia = id => get(id, media);
 export async function deleteMaterial(id) {
   const m = await getMaterial(id);
   if (m?.mediaId) await del(m.mediaId, media);
+  const recs = (await keys(recordings)).filter(k => String(k).startsWith(`${id}:`));
+  await delMany(recs, recordings);
   await del(id, materials);
+}
+
+export async function saveRecording(materialId, blob) {
+  const key = `${materialId}:${uid()}`;
+  await set(key, blob, recordings);
+  return key;
+}
+
+export const getRecording = key => get(key, recordings);
+
+// Drops recordings that no sentence refers to any more.
+export async function pruneRecordings(m) {
+  const used = new Set(Object.values(m.takes || {}).map(t => t.rec));
+  const stale = (await keys(recordings)).filter(k => String(k).startsWith(`${m.id}:`) && !used.has(k));
+  if (stale.length) await delMany(stale, recordings);
+}
+
+// Starred sentences across all materials, newest material first.
+export async function listFavorites() {
+  const out = [];
+  for (const m of await listMaterials()) {
+    for (const i of [...(m.favorites || [])].sort((a, b) => a - b)) {
+      const s = m.segments[i];
+      if (s) out.push({ material: m, index: i, segment: s });
+    }
+  }
+  return out;
 }

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseTranscript, parseStamp, cleanText } from './transcript.js';
 import { isSentenceEnd, linesToWords, wordsToSegments, transcriptToSegments, mergeWithNext, fmtTime } from './segments.js';
-import { parseVideoId } from './youtube.js';
 
 describe('parseStamp', () => {
   it('reads m:ss, h:mm:ss and fractions', () => {
@@ -120,20 +119,5 @@ describe('segments', () => {
   it('formats time', () => {
     expect(fmtTime(65.9)).toBe('1:05');
     expect(fmtTime(3723)).toBe('1:02:03');
-  });
-});
-
-describe('parseVideoId', () => {
-  it('accepts common URL shapes', () => {
-    for (const s of [
-      'https://www.youtube.com/watch?v=arj7oStGLkU&t=10s',
-      'https://youtu.be/arj7oStGLkU?si=x',
-      'youtube.com/shorts/arj7oStGLkU',
-      'https://m.youtube.com/watch?v=arj7oStGLkU',
-      'https://www.youtube.com/embed/arj7oStGLkU',
-      'arj7oStGLkU',
-    ]) expect(parseVideoId(s)).toBe('arj7oStGLkU');
-    expect(parseVideoId('https://example.com/watch?v=arj7oStGLkU')).toBeNull();
-    expect(parseVideoId('hello')).toBeNull();
   });
 });
