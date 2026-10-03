@@ -38,15 +38,13 @@ export default function Guide({ onPickFiles, dropProps, standalone }) {
       </header>
 
       <section className="guide-hero">
-        <h1>聞こえた英語を、すぐ後ろから追いかける。</h1>
-        <p>
-          Kodamaは、英語のシャドーイングを練習するためのアプリです。TEDのトークや手持ちの音声を、1文ずつに区切って再生します。聞いたらすぐ声に出す練習を、文ごとにくり返せるのが特徴です。
-        </p>
+        <h1>Kodama</h1>
+        <p>英語のシャドーイングを練習するアプリです。TEDのトークや手持ちの音声を、1文ずつに区切って再生します。</p>
         <div className="intro-actions">
           <a className="button primary" href="#/add/ted">TEDから選ぶ</a>
           <button className="button" onClick={e => { e.stopPropagation(); pick(); }}>音声ファイルを読み込む</button>
         </div>
-        <p className="field-note drop-hint">音声や動画のファイルは、この画面にフォルダごとドロップしても大丈夫です。</p>
+        <p className="field-note drop-hint">音声・動画のファイルやフォルダは、この画面にドロップしても読み込めます。</p>
       </section>
 
       <figure className="sample" aria-label="練習画面の見本">

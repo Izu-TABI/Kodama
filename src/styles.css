@@ -165,7 +165,8 @@ button:focus-visible, a:focus-visible, .drop:focus-within {
 .cell.head { border: 0; background: none; padding: 0; text-align: left; cursor: pointer; }
 .cell.head:hover, .cell.head.on { color: var(--ink); }
 .sort-dir { margin-left: 4px; }
-.file-row { padding: 5px 8px; min-height: 42px; border-radius: var(--radius); user-select: none; -webkit-user-select: none; }
+.file-row { padding: 5px 8px; min-height: 42px; border-radius: var(--radius); cursor: pointer; user-select: none; -webkit-user-select: none; }
+.file-row:hover:not(.selected) { background: color-mix(in srgb, var(--wash) 55%, transparent); }
 .file-row:first-of-type { margin-top: 4px; }
 .file-row.selected { background: var(--wash); }
 .file-row.drop { background: var(--wash); outline: 1px solid var(--ink); }
