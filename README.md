@@ -27,6 +27,8 @@ npm test
 
 `npm run data` は、TEDのトーク一覧（`public/ted`）と英和辞書（`public/dict`）を作ります。どちらもリポジトリには含めていないので、最初に一度だけ実行が必要です。
 
+公開は Firebase Hosting で、`npm run build` のあとに `npx firebase-tools deploy --only hosting` を実行します。
+
 オフライン用のService Workerは、ビルドのときに `src/sw.js` から `dist/sw.js` を作る仕組みです。開発サーバーでは登録しないので、確かめるときは `npm run build` のあとに `npm run preview` で開きます。
 
 ## データの出どころ
