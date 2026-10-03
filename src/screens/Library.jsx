@@ -14,6 +14,7 @@ import { fmtTime } from '../lib/segments.js';
 import { go } from '../App.jsx';
 import Icon from '../components/Icon.jsx';
 import MoveDialog from '../components/MoveDialog.jsx';
+import Guide from './Guide.jsx';
 
 const SORT_KEY = 'shadowing:sort';
 const EXPANDED_KEY = 'shadowing:expanded';
@@ -344,39 +345,34 @@ export default function Library({ folderId = null, view = 'files' }) {
     { label: '削除', run: () => removeKeys(keys), danger: true },
   ].filter(Boolean);
 
+  const fileField = (
+    <input
+      ref={fileInput}
+      type="file"
+      multiple
+      accept="audio/*,video/*"
+      hidden
+      onChange={e => {
+        const found = filesFromInput(e.target.files);
+        e.target.value = '';
+        importFrom(async () => found, favorites ? null : here);
+      }}
+    />
+  );
+
+  // New users see the guide until something is in the library.
+  if (empty) {
+    return <>{fileField}<Guide onPickFiles={pickFiles} dropProps={dropTarget(null, 'here')} /></>;
+  }
+
   return (
     <main className="page library" onClick={() => { setMenu(null); if (!touch) setSelected(new Set()); }}>
       <header className="masthead">
-        <span className="wordmark">Shadowing</span>
+        <span className="wordmark">Kodama</span>
+        <a className="text-button" href="#/guide">使い方</a>
       </header>
 
-      <input
-        ref={fileInput}
-        type="file"
-        multiple
-        accept="audio/*,video/*"
-        hidden
-        onChange={e => {
-          const found = filesFromInput(e.target.files);
-          e.target.value = '';
-          importFrom(async () => found, favorites ? null : here);
-        }}
-      />
-
-      {empty && (
-        <section className="intro" {...dropTarget(null, 'here')}>
-          <h1>聞こえた英語を、すぐ後ろから追いかける。</h1>
-          <p>
-            TEDのトークや手持ちの音声を1文ずつに区切って、シャドーイングできます。
-            わからない単語はタップで意味を、文は和訳を見られます。
-          </p>
-          <div className="intro-actions">
-            <a className="button primary" href="#/add/ted">TEDから選ぶ</a>
-            <button className="button" onClick={e => { e.stopPropagation(); pickFiles(); }}>ファイルを読み込む</button>
-          </div>
-          {!touch && <p className="field-note">音声・動画のファイルやフォルダを、この画面にドロップしても読み込めます。</p>}
-        </section>
-      )}
+      {fileField}
 
       {materials && !empty && (
         <>

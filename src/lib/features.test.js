@@ -116,6 +116,7 @@ describe('dictionary', () => {
 
   it('splits senses', () => {
     expect(senses('『行く』,進む / 動く / 去る', 2)).toEqual(['行く,進む', '動く']);
+    expect(senses('《『manage to』do》『なんとか』(…)『する』')).toEqual(['《manage to do》なんとか(…)する']);
   });
 });
 

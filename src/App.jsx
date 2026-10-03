@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import Library from './screens/Library.jsx';
 import AddMaterial from './screens/AddMaterial.jsx';
 import Practice from './screens/Practice.jsx';
+import Guide from './screens/Guide.jsx';
 
 function useHashRoute() {
   const [hash, setHash] = useState(() => location.hash);
@@ -21,6 +22,7 @@ export default function App() {
   if (page === 'add') return <AddMaterial folderId={sub} />;
   if (page === 'f' && arg) return <Library folderId={arg} />;
   if (page === 'fav') return <Library view="favorites" />;
+  if (page === 'guide') return <Guide standalone />;
   if (page === 'm' && arg) {
     const index = sub != null && /^\d+$/.test(sub) ? Number(sub) : undefined;
     return <Practice key={`${arg}/${sub ?? ''}`} id={arg} initialIndex={index} />;

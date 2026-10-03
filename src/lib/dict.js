@@ -93,8 +93,13 @@ export async function lookupWord(raw) {
 }
 
 // Splits an entry into senses for display, without the emphasis brackets.
+// A bracket between two English words stands for a space (《『manage to』do》).
 export function senses(meaning, limit = 6) {
-  return meaning.split(/\s*\/\s*/).map(s => s.replace(/[『』]/g, '').trim()).filter(Boolean).slice(0, limit);
+  return meaning
+    .split(/\s*\/\s*/)
+    .map(s => s.replace(/(?<=[A-Za-z])[『』](?=[A-Za-z])/g, ' ').replace(/[『』]/g, '').trim())
+    .filter(Boolean)
+    .slice(0, limit);
 }
 
 export const weblioUrl = word => `https://ejje.weblio.jp/content/${encodeURIComponent(word)}`;
