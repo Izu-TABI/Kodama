@@ -1,10 +1,11 @@
-import { useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import Icon from '../components/Icon.jsx';
 import { senses } from '../lib/dict.js';
 import { queueImport } from '../lib/imports.js';
 import { filesFromInput } from '../lib/files.js';
 import { warmUpTranslator } from '../lib/translate.js';
 import { go } from '../App.jsx';
+import { pageReady } from '../lib/transition.js';
 
 // Shown to new users in place of the empty library, and later from 使い方.
 // The copy was written with yomiyasu (github.com/nanaism/yomiyasu) and checked with its linter.
@@ -22,6 +23,7 @@ export default function Guide({ onPickFiles, dropProps, standalone }) {
   // Opened on its own (from 使い方), the guide reads files in itself and then shows the library.
   const input = useRef(null);
   const pick = onPickFiles ?? (() => { warmUpTranslator(); input.current?.click(); });
+  useLayoutEffect(() => { pageReady(); }, []);
   return (
     <main className="page guide" {...(dropProps ?? {})}>
       {!onPickFiles && (

@@ -8,6 +8,7 @@ import {
 import { importItems, subscribeImports, queueImport, cancelImport, clearFinished } from '../lib/imports.js';
 import { filesFromInput, entriesFromDrop } from '../lib/files.js';
 import { warmUpTranslator } from '../lib/translate.js';
+import { pageReady, scrollMemory } from '../lib/transition.js';
 import { imageUrl, loadCatalog } from '../lib/ted.js';
 import { readActivity, summarize, calendar } from '../lib/activity.js';
 import { fmtTime } from '../lib/segments.js';
@@ -100,6 +101,16 @@ export default function Library({ folderId = null, view = 'files' }) {
   // Imports add folders and materials: show them as they appear.
   const importChanges = imports.length + imports.filter(it => it.status !== 'waiting' && it.status !== 'working').length;
   useEffect(() => { if (importChanges) reload(); }, [importChanges, reload]);
+
+  // Once the list is on screen: return to where this place was scrolled, then show it.
+  const restored = useRef(null);
+  useLayoutEffect(() => {
+    if (!materials || restored.current === location.hash) return;
+    restored.current = location.hash;
+    const y = scrollMemory.get(location.hash);
+    if (y) window.scrollTo(0, y);
+    pageReady();
+  }, [materials, folderId, view]);
 
   // A new place starts with nothing selected.
   useEffect(() => {

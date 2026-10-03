@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { getMaterial, saveMaterial, getMedia, saveRecording, getRecording, pruneRecordings } from '../lib/db.js';
 import { attachHls, mediaElementPlayer, playRange } from '../lib/players.js';
 import { Mic, decodeBlob, playClip, mediaToRecording, audioContext } from '../lib/audio.js';
@@ -8,6 +8,7 @@ import { loadTranslations, startTranslations, subscribeTranslations, translation
 import { logPractice } from '../lib/activity.js';
 import { fmtTime } from '../lib/segments.js';
 import { usePrefs } from '../lib/prefs.js';
+import { pageReady } from '../lib/transition.js';
 import Icon from '../components/Icon.jsx';
 import Segmented from '../components/Segmented.jsx';
 import LookupPopover from '../components/LookupPopover.jsx';
@@ -29,6 +30,7 @@ const sleep = (ms, signal) => new Promise(resolve => {
 // pinned video (phones) and above the controls at the bottom. On opening, a
 // sentence already above that height stays put (so the first sentences keep
 // the title and settings in view); one further down is brought up to it.
+// Returns whether the sentence was moved.
 function placeAtReadingHeight(row, { opening }) {
   const controls = document.querySelector('.transport')?.offsetHeight ?? 0;
   const screen = document.querySelector('.practice.with-video .screen');
@@ -37,8 +39,9 @@ function placeAtReadingHeight(row, { opening }) {
   const r = row.getBoundingClientRect();
   const target = pinned + visible * 0.42 - Math.min(r.height, visible * 0.6) / 2;
   const delta = r.top - target;
-  if (opening && delta <= 0) return;
+  if (opening && delta <= 0) return false;
   if (Math.abs(delta) > 4) window.scrollBy({ top: delta, behavior: opening ? 'auto' : 'smooth' });
+  return true;
 }
 
 const indexAt = (segments, t) => {
@@ -187,7 +190,7 @@ export default function Practice({ id, initialIndex }) {
   // Keep the sentence being read at a steady reading height instead of
   // letting it drift down to the controls.
   const placedOnce = useRef(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const row = rowRefs.current[index];
     if (!row) return;
     if (placedOnce.current) {
@@ -195,11 +198,14 @@ export default function Practice({ id, initialIndex }) {
       return;
     }
     placedOnce.current = true;
-    // The web font and the notes above the script settle just after opening and
-    // move the sentence; place it once they have.
+    // Placed before the page is shown, so it doesn't jump after the fade.
+    const moved = placeAtReadingHeight(row, { opening: true });
+    pageReady();
+    // The web font and the notes above the script settle a moment later and
+    // shift the sentence a little; put it back once they have.
     let cancelled = false;
     document.fonts.ready.then(() => setTimeout(() => {
-      if (!cancelled) placeAtReadingHeight(row, { opening: true });
+      if (!cancelled && moved) placeAtReadingHeight(row, { opening: false });
     }, 250));
     return () => { cancelled = true; };
   }, [index, m?.id]);
@@ -547,22 +553,27 @@ export default function Practice({ id, initialIndex }) {
         {!showsVideo && <Timeline segments={segs} index={index} duration={m.duration} onSelect={i => { stopAll(); setIndex(i); }} />}
 
         <div className={`settings ${settingsOpen ? 'open' : ''}`}>
-          <Segmented label="練習" value={prefs.mode} options={[['single', '1文ずつ'], ['through', '通し']]}
-            onChange={mode => { stopAll(); setPrefs({ mode }); }} />
-          <Segmented label="速度" value={prefs.rate} options={[[0.75, '0.75'], [1, '1.0'], [1.25, '1.25']]}
-            onChange={rate => setPrefs({ rate })} />
-          <Segmented label="英文" value={prefs.showText} options={[[true, '表示'], [false, '隠す']]}
-            onChange={showText => { setPrefs({ showText }); setRevealed(new Set()); }} />
-          {hasTranslations && (
-            <Segmented label="和訳" value={prefs.showJa} options={[[true, '表示'], [false, '隠す']]}
-              onChange={showJa => { setPrefs({ showJa }); setJaOpen(new Set()); }} />
-          )}
-          {!through && !recordMode && (
+          {/* Sound on one side, text on the other. くり返し stays put when it doesn't apply,
+              so the rows below it don't jump while you click. */}
+          <div className="settings-group" role="group" aria-label="再生と録音">
+            <Segmented label="練習" value={prefs.mode} options={[['single', '1文ずつ'], ['through', '通し']]}
+              onChange={mode => { stopAll(); setPrefs({ mode }); }} />
             <Segmented label="くり返し" value={prefs.repeat} options={[[1, '1回'], [3, '3回'], [0, 'ずっと']]}
-              onChange={repeat => setPrefs({ repeat })} />
-          )}
-          <Segmented label="録音" value={prefs.record} options={[[false, 'しない'], [true, 'する']]}
-            onChange={rec => { stopAll(); setPrefs({ record: rec }); }} />
+              onChange={repeat => setPrefs({ repeat })}
+              disabled={through || recordMode} note="1文ずつで、録音しないときに使えます" />
+            <Segmented label="速度" value={prefs.rate} options={[[0.75, '0.75'], [1, '1.0'], [1.25, '1.25']]}
+              onChange={rate => setPrefs({ rate })} />
+            <Segmented label="録音" value={prefs.record} options={[[false, 'しない'], [true, 'する']]}
+              onChange={rec => { stopAll(); setPrefs({ record: rec }); }} />
+          </div>
+          <div className="settings-group" role="group" aria-label="表示">
+            <Segmented label="英文" value={prefs.showText} options={[[true, '表示'], [false, '隠す']]}
+              onChange={showText => { setPrefs({ showText }); setRevealed(new Set()); }} />
+            {hasTranslations && (
+              <Segmented label="和訳" value={prefs.showJa} options={[[true, '表示'], [false, '隠す']]}
+                onChange={showJa => { setPrefs({ showJa }); setJaOpen(new Set()); }} />
+            )}
+          </div>
         </div>
 
         <TranslationNote state={translation} missing={missingJa} onStart={translateNow} />
@@ -668,7 +679,7 @@ function TranslationNote({ state, missing, onStart }) {
     );
   }
   if (state.status === 'unsupported') {
-    return <p className="hint">このブラウザでは和訳を自動で作れません（PCのChromeなら作れます）。文ごとにGoogle翻訳で見られます。</p>;
+    return <p className="hint">このブラウザでは和訳を自動で作れません（PC版Chromeのみ可能）。<br />文ごとにGoogle翻訳する形式となります。</p>;
   }
   if (state.status === 'failed') {
     return <p className="hint warn">和訳を作れませんでした。<button className="link-button" onClick={onStart}>もう一度</button></p>;

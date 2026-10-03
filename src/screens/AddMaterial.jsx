@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { fmtTime } from '../lib/segments.js';
 import { loadCatalog, searchTalks, parseTedSlug, loadTalk, imageUrl, KIND_LABEL } from '../lib/ted.js';
 import { createMaterial, listMaterials, listFolders } from '../lib/db.js';
 import { folderPath } from '../lib/tree.js';
 import { canTranslateOnDevice, warmUpTranslator } from '../lib/translate.js';
 import { go } from '../App.jsx';
+import { changePage, pageReady } from '../lib/transition.js';
 import Icon from '../components/Icon.jsx';
 import Segmented from '../components/Segmented.jsx';
 
@@ -77,9 +78,26 @@ function FromTed({ folderId }) {
   }, [catalog, slug, query, length, japanese, sort]);
 
   useEffect(() => { setLimit(PAGE); }, [query, length, japanese, sort]);
+  useLayoutEffect(() => { if (catalog || error) pageReady(); }, [catalog, error]);
+
+  // A talk opens like a page of its own; back on the list, you're where you left it.
+  const listScroll = useRef(null);
+  const openTalk = talk => changePage(() => {
+    listScroll.current = window.scrollY;
+    window.scrollTo(0, 0);
+    setSelected(talk);
+  }, { within: true });
+  const closeTalk = () => changePage(() => setSelected(null), { within: true });
+  useLayoutEffect(() => {
+    if (selected) { pageReady(); return; }
+    if (listScroll.current == null) return; // first visit: ready once the catalog is in
+    window.scrollTo(0, listScroll.current);
+    listScroll.current = null;
+    pageReady();
+  }, [selected]);
 
   if (selected) {
-    return <TalkDetail talk={selected} addedId={added.get(selected.slug)} folderId={folderId} onBack={() => setSelected(null)} />;
+    return <TalkDetail talk={selected} addedId={added.get(selected.slug)} folderId={folderId} onBack={closeTalk} />;
   }
 
   return (
@@ -102,7 +120,7 @@ function FromTed({ folderId }) {
         <Segmented label="並び" value={sort} options={[['new', '新しい順'], ['popular', '人気順']]} onChange={setSort} />
       </div>
       {!canTranslateOnDevice() && (
-        <p className="field-note">このブラウザでは和訳を自動で作れないので、「和訳あり」のトークがおすすめです。</p>
+        <p className="field-note">このブラウザでは和訳を自動で作れないため、「和訳あり」のトークがおすすめです。</p>
       )}
 
       {error && <p className="field-note warn">{error}</p>}
@@ -116,7 +134,7 @@ function FromTed({ folderId }) {
           <ol>
             {results.slice(0, limit).map(t => (
               <li key={t.slug}>
-                <button className="talk" onClick={() => setSelected(t)}>
+                <button className="talk" onClick={() => openTalk(t)}>
                   <span className="talk-thumb">{t.image && <img src={imageUrl(t.image, 240)} alt="" loading="lazy" />}</span>
                   <span className="talk-text">
                     <span className="talk-title">{t.title}</span>
