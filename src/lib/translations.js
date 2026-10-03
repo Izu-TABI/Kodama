@@ -9,6 +9,7 @@ const store = () => (opened ??= createStore('shadowing-translations', 'translati
 
 export const loadTranslations = async id => (await get(id, store()))?.mt ?? [];
 export const deleteTranslations = id => del(id, store());
+export const saveTranslations = (id, mt) => set(id, { mt }, store());
 
 export const needsMachineTranslation = (segments, mt = []) => segments.some((s, i) => !s.ja && !mt[i]);
 
@@ -74,7 +75,7 @@ export async function startTranslations(material) {
     emit({ status: 'running', mt: existing });
     const mt = await translateMissing(material.segments, existing, text => translator.translate(text), {
       onProgress: p => emit({ status: 'running', done: p.done, total: p.total, mt: p.mt }),
-      save: mt => set(material.id, { mt }, store()),
+      save: mt => saveTranslations(material.id, mt),
     });
     emit({ status: 'done', mt });
   } catch {

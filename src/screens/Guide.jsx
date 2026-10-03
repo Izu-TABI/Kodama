@@ -1,6 +1,7 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import Icon from '../components/Icon.jsx';
 import ThemeToggle from '../components/ThemeToggle.jsx';
+import BackupDialog from '../components/BackupDialog.jsx';
 import { senses } from '../lib/dict.js';
 import { queueImport } from '../lib/imports.js';
 import { filesFromInput } from '../lib/files.js';
@@ -20,9 +21,10 @@ const SAMPLE = [
   { n: '03', en: 'Now it’s the part of the day I look forward to most.', ja: '今では、1日でいちばん楽しみな時間です。' },
 ];
 
-export default function Guide({ onPickFiles, dropProps, standalone }) {
+export default function Guide({ onPickFiles, dropProps, standalone, onRestored }) {
   // Opened on its own (from 使い方), the guide reads files in itself and then shows the library.
   const input = useRef(null);
+  const [backupOpen, setBackupOpen] = useState(false);
   const pick = onPickFiles ?? (() => { warmUpTranslator(); input.current?.click(); });
   useLayoutEffect(() => { pageReady(); }, []);
   return (
@@ -48,6 +50,9 @@ export default function Guide({ onPickFiles, dropProps, standalone }) {
           <button className="button" onClick={e => { e.stopPropagation(); pick(); }}>音声ファイルを読み込む</button>
         </div>
         <p className="field-note drop-hint">音声・動画のファイルやフォルダは、この画面にドロップしても読み込めます。</p>
+        <p className="field-note">
+          <button className="link-button" onClick={e => { e.stopPropagation(); setBackupOpen(true); }}>バックアップから戻す</button>
+        </p>
       </section>
 
       <figure className="sample" aria-label="練習画面の見本">
@@ -116,13 +121,16 @@ export default function Guide({ onPickFiles, dropProps, standalone }) {
           <dt>教材の整理</dt>
           <dd>フォルダを作って、教材を分けられます。ドラッグでの移動や名前順の並べ替えなど、操作はファイル管理アプリと同じです。</dd>
           <dt>続けた記録</dt>
-          <dd>練習した日が続くと、連続日数と2週間分の記録が教材一覧に出ます。</dd>
+          <dd>練習した日が続くと、連続日数と練習した日の記録が教材一覧に出ます。</dd>
         </dl>
       </section>
 
       <section className="guide-section">
         <h2>データの保存</h2>
         <p>教材・録音・和訳・練習の記録は、このブラウザの中にだけ保存します。サーバーには送りません。ブラウザのデータを消すと教材も一緒に消えるので、注意が必要です。</p>
+        <p>教材一覧の「バックアップ」を使うと、すべてのデータを1つのファイルに書き出せます。別の端末に移すときは、このファイルを読み込むだけで元どおりです。</p>
+        <p>iPhoneのSafariは、しばらく開かなかったサイトのデータを消すことがあります。ホーム画面に追加したアプリは、その対象外です。iPhoneでは、Safariの共有メニューにある「ホーム画面に追加」で追加しておくのがおすすめです。</p>
+        <p>PCのChromeなら、アドレスバーのインストールのボタンからアプリとして追加できます。追加したアプリは、通信のないときでも開けます。</p>
       </section>
 
       <section className="guide-section">
@@ -131,6 +139,10 @@ export default function Guide({ onPickFiles, dropProps, standalone }) {
         <p>録音するときは、ヘッドホンが必要です。スピーカーで流すと、お手本の音もマイクに入るためです。</p>
         <p>音声ファイルを初めて読み込むときは、文字起こし用のデータを約210MB読み込みます。</p>
       </section>
+
+      {backupOpen && (
+        <BackupDialog onClose={changed => { setBackupOpen(false); if (changed) (onRestored ?? (() => go('')))(); }} />
+      )}
 
       <footer className="credits">
         <p>Kodamaという名前は、山で声を返す「こだま」から取りました。</p>

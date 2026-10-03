@@ -15,6 +15,7 @@ import { fmtTime } from '../lib/segments.js';
 import { go } from '../App.jsx';
 import Icon from '../components/Icon.jsx';
 import ThemeToggle from '../components/ThemeToggle.jsx';
+import BackupDialog from '../components/BackupDialog.jsx';
 import MoveDialog from '../components/MoveDialog.jsx';
 import Guide from './Guide.jsx';
 
@@ -65,6 +66,7 @@ export default function Library({ folderId = null, view = 'files' }) {
   const [renaming, setRenaming] = useState(null);
   const [moving, setMoving] = useState(null);
   const [menu, setMenu] = useState(null);
+  const [backupOpen, setBackupOpen] = useState(false);
   const [dropOn, setDropOn] = useState(null);
   const [selectMode, setSelectMode] = useState(false);
   const [notice, setNotice] = useState('');
@@ -383,7 +385,7 @@ export default function Library({ folderId = null, view = 'files' }) {
 
   // New users see the guide until something is in the library.
   if (empty) {
-    return <>{fileField}<Guide onPickFiles={pickFiles} dropProps={dropTarget(null, 'here')} /></>;
+    return <>{fileField}<Guide onPickFiles={pickFiles} dropProps={dropTarget(null, 'here')} onRestored={reload} /></>;
   }
 
   return (
@@ -392,6 +394,7 @@ export default function Library({ folderId = null, view = 'files' }) {
         <span className="wordmark">Kodama</span>
         <div className="masthead-tools">
           <a className="text-button" href="#/guide">使い方</a>
+          <button className="text-button" onClick={e => { e.stopPropagation(); setBackupOpen(true); }}>バックアップ</button>
           <ThemeToggle />
         </div>
       </header>
@@ -524,6 +527,8 @@ export default function Library({ folderId = null, view = 'files' }) {
           ))}
         </ul>
       )}
+
+      {backupOpen && <BackupDialog onClose={changed => { setBackupOpen(false); if (changed) reload(); }} />}
 
       {moving && (
         <MoveDialog

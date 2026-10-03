@@ -1,6 +1,6 @@
 // Everything stays in this browser (IndexedDB): materials, their media files,
 // recordings and folders.
-import { createStore, get, set, del, values, keys, delMany } from 'idb-keyval';
+import { createStore, get, set, del, values, keys, delMany, entries } from 'idb-keyval';
 import { deleteTranslations } from './translations.js';
 
 const materials = createStore('shadowing-materials', 'materials');
@@ -57,6 +57,11 @@ export async function saveRecording(materialId, blob) {
 
 export const getRecording = key => get(key, recordings);
 
+// For backups: every recording, and files put back under their own keys.
+export const listRecordings = () => entries(recordings);
+export const putRecording = (key, blob) => set(key, blob, recordings);
+export const putMedia = (key, blob) => set(key, blob, media);
+
 // Drops recordings that no sentence refers to any more.
 export async function pruneRecordings(m) {
   const used = new Set(Object.values(m.takes || {}).map(t => t.rec));
@@ -71,7 +76,7 @@ export async function listFolders() {
   return ((await get('folders', meta)) ?? []).map(f => ({ ...f, parentId: f.parentId ?? null }));
 }
 
-const saveFolders = folders => set('folders', folders, meta);
+export const saveFolders = folders => set('folders', folders, meta);
 
 export async function createFolder(name, parentId = null) {
   const folder = { id: uid(), name, parentId, createdAt: Date.now() };
