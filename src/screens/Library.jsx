@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   listMaterials, updateMaterial, listFolders, createFolder, renameFolder, moveItems, deleteFolders,
 } from '../lib/db.js';
@@ -9,7 +9,7 @@ import { importItems, subscribeImports, queueImport, cancelImport, clearFinished
 import { filesFromInput, entriesFromDrop } from '../lib/files.js';
 import { warmUpTranslator } from '../lib/translate.js';
 import { imageUrl, loadCatalog } from '../lib/ted.js';
-import { readActivity, summarize } from '../lib/activity.js';
+import { readActivity, summarize, calendar } from '../lib/activity.js';
 import { fmtTime } from '../lib/segments.js';
 import { go } from '../App.jsx';
 import Icon from '../components/Icon.jsx';
@@ -64,7 +64,8 @@ export default function Library({ folderId = null, view = 'files' }) {
   const [dropOn, setDropOn] = useState(null);
   const [selectMode, setSelectMode] = useState(false);
   const [notice, setNotice] = useState('');
-  const [activity, setActivity] = useState(() => summarize(readActivity().days));
+  const [days, setDays] = useState(() => readActivity().days);
+  const activity = useMemo(() => summarize(days), [days]);
   const touch = useMedia('(hover: none)');
   const imports = useImports();
   const fileInput = useRef(null);
@@ -79,7 +80,7 @@ export default function Library({ folderId = null, view = 'files' }) {
 
   useEffect(() => {
     reload();
-    const refresh = () => setActivity(summarize(readActivity().days));
+    const refresh = () => setDays(readActivity().days);
     addEventListener('shadowing:activity', refresh);
     addEventListener('focus', refresh);
     return () => { removeEventListener('shadowing:activity', refresh); removeEventListener('focus', refresh); };
@@ -376,7 +377,7 @@ export default function Library({ folderId = null, view = 'files' }) {
 
       {materials && !empty && (
         <>
-          {activity.totalDays > 0 && <Streak activity={activity} />}
+          {activity.totalDays > 0 && <Activity activity={activity} days={days} />}
 
           <nav className="views" aria-label="表示">
             <a className={`view ${!favorites ? 'on' : ''}`} href="#/">教材</a>
@@ -666,24 +667,61 @@ function ImportPanel({ items, placeName }) {
   );
 }
 
-function Streak({ activity }) {
-  const { current, best, today, recent } = activity;
+// Practice over the past year, drawn like GitHub's contribution graph.
+const WEEKDAYS = ['', '月', '', '水', '', '金', ''];
+
+// One week = a 9px square column plus a 3px gap; the weekday labels take 18px.
+const weeksThatFit = width => Math.max(8, Math.min(53, Math.floor((width - 18 + 3) / 12)));
+
+function Activity({ activity, days }) {
+  const { current, best, today } = activity;
+  const box = useRef(null);
+  // As many weeks as fit: a year on a wide screen, fewer on a phone.
+  const [weeks, setWeeks] = useState(53);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const fit = () => setWeeks(weeksThatFit(el.clientWidth));
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const cal = useMemo(() => calendar(days, new Date(), weeks), [days, weeks]);
+  const span = weeks >= 52 ? 'この1年' : `この${Math.max(1, Math.round((weeks * 7) / 30.4))}か月`;
   return (
-    <section className="streak" aria-label="練習の記録">
-      <div className="streak-figure">
-        <span className="big num">{current}</span>
-        <span className="unit">日連続</span>
-      </div>
-      <div className="streak-detail">
+    <section className="activity" aria-label="練習の記録">
+      <div className="activity-head">
+        <div className="streak-figure">
+          <span className="big num">{current}</span>
+          <span className="unit">日連続</span>
+        </div>
         <p className="streak-today num">
           今日 {today.n}文{today.s > 0 && <><span className="sep">·</span>{fmtMinutes(today.s)}</>}
           {best > current && <><span className="sep">·</span>最長 {best}日</>}
         </p>
-        <ol className="streak-days" aria-label="この2週間">
-          {recent.map((d, i) => (
-            <li key={d.key} className={`${d.n > 0 ? 'done' : ''} ${i === recent.length - 1 ? 'today' : ''}`} title={`${d.key}　${d.n}文`} />
-          ))}
-        </ol>
+      </div>
+      <div className="heatmap-box" ref={box}>
+        <div className="heatmap" style={{ '--weeks': cal.columns.length }}>
+          <div className="heatmap-months" aria-hidden="true">
+            {cal.months.map(m => <span key={m.column} style={{ gridColumnStart: m.column + 1 }}>{m.label}</span>)}
+          </div>
+          <div className="heatmap-weekdays" aria-hidden="true">
+            {WEEKDAYS.map((d, i) => <span key={i}>{d}</span>)}
+          </div>
+          <div className="heatmap-grid" role="img" aria-label={`${span}で${cal.practiced}日練習`}>
+            {cal.columns.flatMap(column => column.map(c => (
+              <span key={c.key} className={`day l${c.level} ${c.future ? 'future' : ''}`}
+                title={c.future ? undefined : `${c.month}月${c.day}日　${c.n ? `${c.n}文` : '練習なし'}`} />
+            )))}
+          </div>
+          <p className="heatmap-foot">
+            <span className="num">{span}で{cal.practiced}日・{cal.sentences.toLocaleString('ja-JP')}文</span>
+            <span className="legend" aria-hidden="true">
+              少ない{[0, 1, 2, 3, 4].map(l => <span key={l} className={`day l${l}`} />)}多い
+            </span>
+          </p>
+        </div>
       </div>
     </section>
   );

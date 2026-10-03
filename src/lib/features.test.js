@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { streamUrl, decodeTalk, parseTedSlug, searchTalks, alignTranslation, joinJapanese, imageUrl } from './ted.js';
 import { baseForms, normalizeWord, lookupWord, senses, setDictionaryLoader } from './dict.js';
-import { summarize, dayKey } from './activity.js';
+import { summarize, dayKey, calendar, levelOf } from './activity.js';
 import { translateMissing, needsMachineTranslation } from './translations.js';
 
 describe('TED catalog', () => {
@@ -129,8 +129,27 @@ describe('streaks', () => {
     expect(s.current).toBe(2);
     expect(s.best).toBe(3);
     expect(s.today.n).toBe(5);
-    expect(s.recent).toHaveLength(14);
-    expect(s.recent[13]).toEqual({ key: '2026-10-03', n: 5 });
+  });
+
+  it('lays out a year of weeks with today in the last column', () => {
+    const c = calendar(days, at('2026-10-03'));
+    expect(c.columns).toHaveLength(53);
+    expect(c.columns.every(col => col.length === 7)).toBe(true);
+    const last = c.columns[52];
+    expect(last[0].key).toBe('2026-09-27'); // the Sunday of this week
+    expect(last[6].key).toBe('2026-10-03'); // 2026-10-03 is a Saturday
+    expect(last.some(d => d.future)).toBe(false);
+    expect(calendar(days, at('2026-10-01')).columns[52].filter(d => d.future).map(d => d.key)).toEqual(['2026-10-02', '2026-10-03']);
+    expect(c.practiced).toBe(5);
+    expect(c.sentences).toBe(25);
+    expect(c.months.at(-1)).toEqual({ column: 49, label: '9月' }); // the first week starting in September
+    // A year back: October 2025 first (its September stub is too narrow for a label), 12 labels in all.
+    expect(c.months[0]).toEqual({ column: 1, label: '10月' });
+    expect(c.months).toHaveLength(12);
+  });
+
+  it('grades days into levels', () => {
+    expect([0, 1, 9, 10, 29, 30, 59, 60, 200].map(levelOf)).toEqual([0, 1, 1, 2, 2, 3, 3, 4, 4]);
   });
 
   it('keeps the streak open until today ends', () => {

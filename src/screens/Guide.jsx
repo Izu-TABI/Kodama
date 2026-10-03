@@ -32,10 +32,11 @@ export default function Guide({ onPickFiles, dropProps, standalone }) {
             if ((await queueImport(found, null)).queued) go('');
           }} />
       )}
-      <header className="masthead">
-        <span className="wordmark">Kodama</span>
-        {standalone && <a className="back" href="#/"><Icon name="back" size={14} />教材</a>}
-      </header>
+      {standalone && (
+        <header className="masthead">
+          <a className="back" href="#/"><Icon name="back" size={14} />教材</a>
+        </header>
+      )}
 
       <section className="guide-hero">
         <h1>Kodama</h1>

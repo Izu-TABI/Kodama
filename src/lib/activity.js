@@ -43,10 +43,39 @@ export function summarize(days, today = new Date()) {
     best = Math.max(best, run);
     prev = d;
   }
-  const recent = Array.from({ length: 14 }, (_, i) => {
-    const d = addDays(today, i - 13);
-    return { key: dayKey(d), n: days[dayKey(d)]?.n ?? 0 };
-  });
   const t = days[dayKey(today)] ?? { n: 0, s: 0 };
-  return { current, best, today: t, recent, totalDays: keys.length };
+  return { current, best, today: t, totalDays: keys.length };
+}
+
+// Darker squares for more sentences, like GitHub's contribution graph.
+export const levelOf = n => (n <= 0 ? 0 : n < 10 ? 1 : n < 30 ? 2 : n < 60 ? 3 : 4);
+
+// About a year as GitHub draws it: one column per week (Sunday first), the
+// last column holding today; days after today are left out.
+export function calendar(days, today = new Date(), weeks = 53) {
+  const end = new Date(today);
+  end.setHours(12, 0, 0, 0);
+  const start = addDays(end, -end.getDay() - (weeks - 1) * 7);
+  const columns = [];
+  let practiced = 0, sentences = 0;
+  for (let w = 0; w < weeks; w++) {
+    const column = [];
+    for (let d = 0; d < 7; d++) {
+      const date = addDays(start, w * 7 + d);
+      const key = dayKey(date);
+      const future = date > end;
+      const n = future ? 0 : days[key]?.n ?? 0;
+      if (n > 0) { practiced++; sentences += n; }
+      column.push({ key, n, level: levelOf(n), future, month: date.getMonth() + 1, day: date.getDate() });
+    }
+    columns.push(column);
+  }
+  // A month is labelled at the first week that starts in it; a label with
+  // no room before the next one is dropped.
+  const months = [];
+  columns.forEach((column, i) => {
+    if (i === 0 || column[0].month !== columns[i - 1][0].month) months.push({ column: i, label: `${column[0].month}月` });
+  });
+  if (months.length > 1 && months[1].column - months[0].column < 3) months.shift();
+  return { columns, months, practiced, sentences };
 }

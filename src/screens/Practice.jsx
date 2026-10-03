@@ -27,16 +27,17 @@ const sleep = (ms, signal) => new Promise(resolve => {
 
 // Puts a sentence a little above the middle of what's visible: below a
 // pinned video (phones) and above the controls at the bottom. On opening, a
-// sentence that is already in view stays put, so the title and settings do too.
+// sentence already above that height stays put (so the first sentences keep
+// the title and settings in view); one further down is brought up to it.
 function placeAtReadingHeight(row, { opening }) {
   const controls = document.querySelector('.transport')?.offsetHeight ?? 0;
   const screen = document.querySelector('.practice.with-video .screen');
   const pinned = screen && getComputedStyle(screen).position === 'sticky' ? screen.offsetHeight : 0;
   const visible = window.innerHeight - controls - pinned;
   const r = row.getBoundingClientRect();
-  if (opening && r.top >= pinned && r.bottom <= pinned + visible) return;
   const target = pinned + visible * 0.42 - Math.min(r.height, visible * 0.6) / 2;
   const delta = r.top - target;
+  if (opening && delta <= 0) return;
   if (Math.abs(delta) > 4) window.scrollBy({ top: delta, behavior: opening ? 'auto' : 'smooth' });
 }
 
@@ -189,8 +190,18 @@ export default function Practice({ id, initialIndex }) {
   useEffect(() => {
     const row = rowRefs.current[index];
     if (!row) return;
-    placeAtReadingHeight(row, { opening: !placedOnce.current });
+    if (placedOnce.current) {
+      placeAtReadingHeight(row, { opening: false });
+      return;
+    }
     placedOnce.current = true;
+    // The web font and the notes above the script settle just after opening and
+    // move the sentence; place it once they have.
+    let cancelled = false;
+    document.fonts.ready.then(() => setTimeout(() => {
+      if (!cancelled) placeAtReadingHeight(row, { opening: true });
+    }, 250));
+    return () => { cancelled = true; };
   }, [index, m?.id]);
 
   const stopAll = useCallback(() => {
@@ -650,10 +661,10 @@ function TranslationNote({ state, missing, onStart }) {
   }
   if (state.status === 'needs-click') {
     return (
-      <p className="hint">
+      <div className="hint">
+        <p>機械翻訳で{missing}文を訳します。初回は翻訳データを読み込みます。</p>
         <button className="link-button" onClick={onStart}>和訳を作る</button>
-        　機械翻訳で{missing}文を訳します（初回は翻訳データを読み込みます）
-      </p>
+      </div>
     );
   }
   if (state.status === 'unsupported') {
