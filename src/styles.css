@@ -1,10 +1,10 @@
 :root {
-  --paper: #f5f3ee;
+  --paper: #fbfbf9;
   --ink: #1c1b18;
   --muted: #6d6960;
-  --faint: #a29d92;
-  --rule: #dad5ca;
-  --wash: #ebe7de;
+  --faint: #a6a39c;
+  --rule: #dfddd6;
+  --wash: #f0efeb;
   --warn: #a5442f;
   --rec: #c2412d;
   --rec-ink: #fff;
@@ -534,7 +534,12 @@ button.disclosure { cursor: pointer; }
 /* Wide screens: media and settings stay put on the left, the script scrolls. */
 @media (min-width: 960px) {
   .practice { display: grid; grid-template-columns: minmax(380px, 460px) 1fr; gap: var(--s8); }
-  .stage { position: sticky; top: 0; align-self: start; max-height: calc(100vh - var(--transport-h)); overflow: auto; padding-bottom: 24px; }
+  /* 8px of room each side (for the header button and focus rings) without moving the content;
+     the column only ever scrolls up and down. */
+  .stage {
+    position: sticky; top: 0; align-self: start; max-height: calc(100vh - var(--transport-h));
+    overflow-x: hidden; overflow-y: auto; padding-inline: 8px; margin-inline: -8px; padding-bottom: 24px;
+  }
   /* Lines the first sentence up with the title. */
   .script-list { margin-top: 72px; }
   /* Two columns under the video, each a label column and an options column. */
