@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { streamUrl, decodeTalk, parseTedSlug, searchTalks, alignTranslation, joinJapanese } from './ted.js';
 import { baseForms, normalizeWord, lookupWord, senses, setDictionaryLoader } from './dict.js';
 import { summarize, dayKey } from './activity.js';
+import { translateMissing, needsMachineTranslation } from './translations.js';
 
 describe('TED catalog', () => {
   it('expands packed stream keys', () => {
@@ -129,5 +130,30 @@ describe('streaks', () => {
 
   it('uses local dates', () => {
     expect(dayKey(new Date(2026, 0, 5, 23, 59))).toBe('2026-01-05');
+  });
+});
+
+describe('machine translations', () => {
+  const segments = [{ text: 'Hello.', ja: 'こんにちは。' }, { text: 'Good morning.' }, { text: 'Thank you.' }, { text: 'Bye.' }];
+
+  it('translates only sentences without any translation, resuming saved work', async () => {
+    const asked = [];
+    const saves = [];
+    const progress = [];
+    const mt = await translateMissing(segments, [null, '（保存済み）'], async text => { asked.push(text); return `訳:${text}`; }, {
+      onProgress: p => progress.push(`${p.done}/${p.total}`),
+      save: async m => saves.push([...m]),
+    });
+    expect(asked).toEqual(['Thank you.', 'Bye.']);
+    expect(mt).toEqual([null, '（保存済み）', '訳:Thank you.', '訳:Bye.']);
+    expect(progress).toEqual(['1/2', '2/2']);
+    expect(saves.at(-1)).toEqual(mt);
+  });
+
+  it('keeps going when one sentence fails', async () => {
+    const mt = await translateMissing(segments, [], async text => { if (text === 'Good morning.') throw new Error('x'); return 'ok'; });
+    expect(mt).toEqual([null, null, 'ok', 'ok']);
+    expect(needsMachineTranslation(segments, mt)).toBe(true);
+    expect(needsMachineTranslation(segments, [null, 'a', 'b', 'c'])).toBe(false);
   });
 });

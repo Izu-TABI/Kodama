@@ -3,7 +3,8 @@ import { getMaterial, saveMaterial, getMedia, saveRecording, getRecording, prune
 import { attachHls, mediaElementPlayer, playRange } from '../lib/players.js';
 import { Mic, decodeBlob, playClip, mediaToRecording, audioContext } from '../lib/audio.js';
 import { streamUrl } from '../lib/ted.js';
-import { canTranslateOnDevice, googleTranslateUrl, translateOnDevice } from '../lib/translate.js';
+import { getTranslator, googleTranslateUrl } from '../lib/translate.js';
+import { loadTranslations, startTranslations, subscribeTranslations, translationState } from '../lib/translations.js';
 import { logPractice } from '../lib/activity.js';
 import { fmtTime } from '../lib/segments.js';
 import { usePrefs } from '../lib/prefs.js';
@@ -23,6 +24,21 @@ const sleep = (ms, signal) => new Promise(resolve => {
   const t = setTimeout(resolve, ms);
   signal?.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
 });
+
+// Puts a sentence a little above the middle of what's visible: below a
+// pinned video (phones) and above the controls at the bottom. On opening, a
+// sentence that is already in view stays put, so the title and settings do too.
+function placeAtReadingHeight(row, { opening }) {
+  const controls = document.querySelector('.transport')?.offsetHeight ?? 0;
+  const screen = document.querySelector('.practice.with-video .screen');
+  const pinned = screen && getComputedStyle(screen).position === 'sticky' ? screen.offsetHeight : 0;
+  const visible = window.innerHeight - controls - pinned;
+  const r = row.getBoundingClientRect();
+  if (opening && r.top >= pinned && r.bottom <= pinned + visible) return;
+  const target = pinned + visible * 0.42 - Math.min(r.height, visible * 0.6) / 2;
+  const delta = r.top - target;
+  if (Math.abs(delta) > 4) window.scrollBy({ top: delta, behavior: opening ? 'auto' : 'smooth' });
+}
 
 const indexAt = (segments, t) => {
   let k = 0;
@@ -50,8 +66,8 @@ export default function Practice({ id, initialIndex }) {
   const [ready, setReady] = useState(false);
   const [revealed, setRevealed] = useState(() => new Set());
   const [jaOpen, setJaOpen] = useState(() => new Set());
-  const [translating, setTranslating] = useState(null);
-  const [mtFailed, setMtFailed] = useState(() => new Set());
+  const [mt, setMt] = useState([]);
+  const [translation, setTranslation] = useState({ status: 'idle' });
   const [lookup, setLookup] = useState(null);
   const [fileUrl, setFileUrl] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(() => !matchMedia('(max-width: 640px)').matches);
@@ -94,6 +110,24 @@ export default function Practice({ id, initialIndex }) {
       if (url) URL.revokeObjectURL(url);
     };
   }, [id, initialIndex]);
+
+  // Translations: human (TED) ones come with the material; the rest are
+  // machine-translated in the background, once, and kept.
+  useEffect(() => {
+    if (!m?.id) return;
+    let alive = true;
+    const apply = state => {
+      if (!alive) return;
+      setTranslation(state);
+      if (state.mt) setMt(state.mt);
+    };
+    loadTranslations(m.id).then(saved => alive && setMt(saved));
+    const unsubscribe = subscribeTranslations(m.id, apply);
+    apply(translationState(m.id));
+    startTranslations(m);
+    return () => { alive = false; unsubscribe(); };
+    // Only when a different material opens, not on every change to it.
+  }, [m?.id]);
 
   const update = useCallback(patch => {
     const next = { ...mRef.current, ...patch };
@@ -149,11 +183,15 @@ export default function Practice({ id, initialIndex }) {
     return () => clearTimeout(t);
   }, [index, m, update]);
 
-  // Keep the current sentence in view.
-  const following = busy === 'through' || busy === 'through-record';
+  // Keep the sentence being read at a steady reading height instead of
+  // letting it drift down to the controls.
+  const placedOnce = useRef(false);
   useEffect(() => {
-    rowRefs.current[index]?.scrollIntoView({ block: following ? 'center' : 'nearest', behavior: 'smooth' });
-  }, [index, following]);
+    const row = rowRefs.current[index];
+    if (!row) return;
+    placeAtReadingHeight(row, { opening: !placedOnce.current });
+    placedOnce.current = true;
+  }, [index, m?.id]);
 
   const stopAll = useCallback(() => {
     abortRef.current?.abort();
@@ -346,24 +384,14 @@ export default function Practice({ id, initialIndex }) {
     }
   });
 
-  // --- Translation & favorites ---------------------------------------------
+  // --- Translation & favorite ----------------------------------------------
 
-  async function machineTranslate(i) {
-    const s = mRef.current.segments[i];
-    setTranslating(i);
-    const ja = await translateOnDevice(s.text);
-    setTranslating(null);
-    if (!ja) { setMtFailed(f => new Set(f).add(i)); return; }
-    update({ segments: mRef.current.segments.map((x, k) => (k === i ? { ...x, mt: ja } : x)) });
-    setJaOpen(o => new Set(o).add(i));
-  }
-
-  const toggleFavorite = i => {
-    const favs = new Set(mRef.current.favorites || []);
-    if (favs.has(i)) favs.delete(i);
-    else favs.add(i);
-    update({ favorites: [...favs].sort((a, b) => a - b) });
+  // The language pack downloads only after a click.
+  const translateNow = () => {
+    getTranslator().then(() => startTranslations(mRef.current)).catch(() => setTranslation({ status: 'unsupported' }));
   };
+
+  const toggleFavorite = () => update({ favorite: !mRef.current.favorite });
 
   // --- Navigation & keys ---------------------------------------------------
 
@@ -422,7 +450,7 @@ export default function Practice({ id, initialIndex }) {
     else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
     else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); move(1); }
     else if (e.key === 'Escape') { if (lookup) setLookup(null); else stopAll(); }
-    else if (k === 'f') toggleFavorite(index);
+    else if (k === 'f') toggleFavorite();
     else if (k === 'j') setJaOpen(o => toggled(o, index));
     else if (k === 'm' && hasTake) listenMine(index);
     else if (k === 'c' && hasTake) compare(index);
@@ -457,8 +485,9 @@ export default function Practice({ id, initialIndex }) {
 
   const segs = m.segments;
   const take = m.takes?.[index];
-  const favorites = new Set(m.favorites || []);
-  const hasTranslations = segs.some(s => s.ja || s.mt);
+  const jaOf = i => segs[i].ja || mt[i] || '';
+  const hasTranslations = segs.some((s, i) => s.ja || mt[i]);
+  const missingJa = segs.filter((s, i) => !s.ja && !mt[i]).length;
   const showsVideo = m.kind === 'ted' || m.mediaType === 'video';
   const recording = busy === 'record' || busy === 'through-record';
   const anyTake = Object.keys(m.takes || {}).length > 0;
@@ -480,7 +509,13 @@ export default function Practice({ id, initialIndex }) {
             {settingsOpen ? '設定を閉じる' : '設定'}
           </button>
         </header>
-        <h1 className="practice-title">{m.title || '　'}</h1>
+        <div className="title-row">
+          <h1 className="practice-title">{m.title || '　'}</h1>
+          <button className={`star ${m.favorite ? 'on' : ''}`} onClick={toggleFavorite} aria-pressed={!!m.favorite}
+            title={m.favorite ? 'お気に入りから外す (F)' : 'お気に入りにする (F)'} aria-label="お気に入り">
+            <Icon name={m.favorite ? 'starred' : 'star'} size={18} />
+          </button>
+        </div>
         {m.kind === 'ted' && (
           <p className="practice-meta">
             TED<span className="sep">·</span>{m.author}
@@ -513,15 +548,16 @@ export default function Practice({ id, initialIndex }) {
             onChange={rec => { stopAll(); setPrefs({ record: rec }); }} />
         </div>
 
+        <TranslationNote state={translation} missing={missingJa} onStart={translateNow} />
         {recordMode && !anyTake && <p className="hint">録音は、この端末の中にだけ保存されます。スピーカーだとお手本の音も入るので、ヘッドホンをつけてください。</p>}
         {error && <p className="hint warn" role="alert">{error}</p>}
-        <p className="keys">Space 再生／停止　←→ 文の移動　単語をクリックで意味　F お気に入り　J 和訳</p>
+        <p className="keys">Space 再生／停止　←→ 文の移動　単語をクリックで意味　J 和訳　F お気に入り</p>
       </aside>
 
       <ol className="script-list" ref={listRef} onMouseUp={onMouseUp}>
         {segs.map((s, i) => {
           const hidden = !prefs.showText && !revealed.has(i);
-          const ja = s.ja || s.mt;
+          const ja = jaOf(i);
           const showJa = ja && (prefs.showJa || jaOpen.has(i));
           const isCurrent = i === index;
           return (
@@ -537,20 +573,17 @@ export default function Practice({ id, initialIndex }) {
                   {s.text.split(' ').map((w, k) => <Fragment key={k}>{k > 0 && ' '}<span className="w">{w}</span></Fragment>)}
                 </p>
                 {showJa && <p className="ja">{ja}{!s.ja && <span className="tag">機械翻訳</span>}</p>}
-                {isCurrent && (
+                {!ja && isCurrent && prefs.showJa && /preparing|running/.test(translation.status) && <p className="ja pending">和訳を作っています…</p>}
+                {isCurrent && (!prefs.showJa || !ja || !prefs.showText) && (
                   <div className="row-actions">
-                    <button className={`act ${favorites.has(i) ? 'on' : ''}`} onClick={() => toggleFavorite(i)} aria-pressed={favorites.has(i)}>
-                      <Icon name={favorites.has(i) ? 'starred' : 'star'} size={13} />お気に入り
-                    </button>
-                    <JaAction
-                      segment={s}
-                      open={!!showJa}
-                      globalOn={prefs.showJa}
-                      busy={translating === i}
-                      failed={mtFailed.has(i)}
-                      onToggle={() => setJaOpen(o => toggled(o, i))}
-                      onTranslate={() => machineTranslate(i)}
-                    />
+                    {ja && !prefs.showJa && (
+                      <button className="act" onClick={() => setJaOpen(o => toggled(o, i))}>{showJa ? '和訳を隠す' : '和訳'}</button>
+                    )}
+                    {!ja && !/preparing|running/.test(translation.status) && (
+                      <a className="act" href={googleTranslateUrl(s.text)} target="_blank" rel="noreferrer">
+                        Google翻訳で和訳<Icon name="out" size={11} />
+                      </a>
+                    )}
                     {!prefs.showText && (
                       <button className="act" onClick={() => setRevealed(r => toggled(r, i))}>
                         {hidden ? '英文を見る' : '英文を隠す'}
@@ -560,7 +593,6 @@ export default function Practice({ id, initialIndex }) {
                 )}
               </div>
               <span className="row-meta">
-                {favorites.has(i) && !isCurrent && <span className="fav" aria-label="お気に入り"><Icon name="starred" size={11} /></span>}
                 {m.takes?.[i] && <span className="taken">録音</span>}
                 <span className="time">{fmtTime(s.start)}</span>
               </span>
@@ -603,21 +635,28 @@ export default function Practice({ id, initialIndex }) {
   );
 }
 
-// 和訳 for the current sentence: TED's translation, an on-device machine
-// translation, or (where neither exists) a link to Google 翻訳.
-function JaAction({ segment, open, globalOn, busy, failed, onToggle, onTranslate }) {
-  if (segment.ja || segment.mt) {
-    if (globalOn) return null;
-    return <button className="act" onClick={onToggle}>{open ? '和訳を隠す' : '和訳'}</button>;
+// Where the machine translations stand, shown only while there is something to say.
+function TranslationNote({ state, missing, onStart }) {
+  if (!missing) return null;
+  if (state.status === 'preparing') return <p className="hint">和訳の準備をしています…</p>;
+  if (state.status === 'running') {
+    return <p className="hint num">和訳を作っています　{state.done ?? 0} / {state.total || missing}</p>;
   }
-  if (canTranslateOnDevice() && !failed) {
-    return <button className="act" onClick={onTranslate} disabled={busy}>{busy ? '翻訳しています…' : '和訳（機械翻訳）'}</button>;
+  if (state.status === 'needs-click') {
+    return (
+      <p className="hint">
+        <button className="link-button" onClick={onStart}>和訳を作る</button>
+        　機械翻訳で{missing}文を訳します（初回は翻訳データを読み込みます）
+      </p>
+    );
   }
-  return (
-    <a className="act" href={googleTranslateUrl(segment.text)} target="_blank" rel="noreferrer">
-      Google翻訳で和訳<Icon name="out" size={11} />
-    </a>
-  );
+  if (state.status === 'unsupported') {
+    return <p className="hint">このブラウザでは和訳を自動で作れません（PCのChromeなら作れます）。文ごとにGoogle翻訳で見られます。</p>;
+  }
+  if (state.status === 'failed') {
+    return <p className="hint warn">和訳を作れませんでした。<button className="link-button" onClick={onStart}>もう一度</button></p>;
+  }
+  return null;
 }
 
 function TextAction({ active, children, onClick, ...rest }) {

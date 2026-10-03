@@ -1,9 +1,12 @@
-// Everything stays in this browser (IndexedDB): materials, their media files and recordings.
+// Everything stays in this browser (IndexedDB): materials, their media files,
+// recordings and folders.
 import { createStore, get, set, del, values, keys, delMany } from 'idb-keyval';
+import { deleteTranslations } from './translations.js';
 
 const materials = createStore('shadowing-materials', 'materials');
 const media = createStore('shadowing-media', 'media');
 const recordings = createStore('shadowing-recordings', 'recordings');
+const meta = createStore('shadowing-meta', 'meta');
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
@@ -19,10 +22,15 @@ export async function saveMaterial(m) {
   return m;
 }
 
+export async function updateMaterial(id, patch) {
+  const m = await getMaterial(id);
+  return m ? saveMaterial({ ...m, ...patch }) : null;
+}
+
 export async function createMaterial(fields, file) {
   navigator.storage?.persist?.().catch(() => {});
   const id = uid();
-  const m = { id, cursor: 0, takes: {}, favorites: [], createdAt: Date.now(), practicedAt: 0, ...fields };
+  const m = { id, cursor: 0, takes: {}, favorite: false, folderId: null, createdAt: Date.now(), practicedAt: 0, ...fields };
   if (file) {
     m.mediaId = id;
     await set(id, file, media);
@@ -37,6 +45,7 @@ export async function deleteMaterial(id) {
   if (m?.mediaId) await del(m.mediaId, media);
   const recs = (await keys(recordings)).filter(k => String(k).startsWith(`${id}:`));
   await delMany(recs, recordings);
+  await deleteTranslations(id);
   await del(id, materials);
 }
 
@@ -55,14 +64,28 @@ export async function pruneRecordings(m) {
   if (stale.length) await delMany(stale, recordings);
 }
 
-// Starred sentences across all materials, newest material first.
-export async function listFavorites() {
-  const out = [];
+// ---- Folders ------------------------------------------------------------------
+
+export async function listFolders() {
+  return (await get('folders', meta)) ?? [];
+}
+
+const saveFolders = folders => set('folders', folders, meta);
+
+export async function createFolder(name) {
+  const folder = { id: uid(), name, createdAt: Date.now() };
+  await saveFolders([...(await listFolders()), folder]);
+  return folder;
+}
+
+export async function renameFolder(id, name) {
+  await saveFolders((await listFolders()).map(f => (f.id === id ? { ...f, name } : f)));
+}
+
+// The folder goes; its materials stay, unfiled.
+export async function deleteFolder(id) {
+  await saveFolders((await listFolders()).filter(f => f.id !== id));
   for (const m of await listMaterials()) {
-    for (const i of [...(m.favorites || [])].sort((a, b) => a - b)) {
-      const s = m.segments[i];
-      if (s) out.push({ material: m, index: i, segment: s });
-    }
+    if (m.folderId === id) await saveMaterial({ ...m, folderId: null });
   }
-  return out;
 }

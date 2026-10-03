@@ -2,26 +2,40 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { wordsToSegments, fmtTime } from '../lib/segments.js';
 import { loadCatalog, searchTalks, parseTedSlug, loadTalk, KIND_LABEL } from '../lib/ted.js';
 import { decodeToMono16k, transcribe } from '../lib/asr.js';
-import { createMaterial, listMaterials } from '../lib/db.js';
+import { createMaterial, listMaterials, listFolders } from '../lib/db.js';
+import { canTranslateOnDevice, getTranslator } from '../lib/translate.js';
 import { go } from '../App.jsx';
 import Icon from '../components/Icon.jsx';
 import Segmented from '../components/Segmented.jsx';
 
-export default function AddMaterial({ initialKind }) {
+// Machine translation starts as soon as the material is added; the click on
+// 追加 lets Chrome download its language pack if it hasn't yet.
+function warmUpTranslator(needed) {
+  if (needed && canTranslateOnDevice()) getTranslator().catch(() => {});
+}
+
+export default function AddMaterial({ initialKind, folderId }) {
   const [kind, setKind] = useState(initialKind === 'file' ? 'file' : 'ted');
+  const [folder, setFolder] = useState(null);
+  useEffect(() => {
+    if (folderId) listFolders().then(fs => setFolder(fs.find(f => f.id === folderId) ?? null));
+  }, [folderId]);
   return (
     <main className="page add">
       <header className="masthead">
         <a className="back" href="#/"><Icon name="back" size={14} />教材</a>
       </header>
       <h1 className="page-title">教材を追加</h1>
-      <Segmented
-        label="追加する方法"
-        value={kind}
-        options={[['ted', 'TEDから選ぶ'], ['file', '音声・動画ファイル']]}
-        onChange={setKind}
-      />
-      {kind === 'ted' ? <FromTed /> : <FromFile />}
+      <div className="add-head">
+        <Segmented
+          label="追加する方法"
+          value={kind}
+          options={[['ted', 'TEDから選ぶ'], ['file', '音声・動画ファイル']]}
+          onChange={setKind}
+        />
+        {folder && <p className="field-note">追加先：{folder.name}</p>}
+      </div>
+      {kind === 'ted' ? <FromTed folderId={folder?.id ?? null} /> : <FromFile folderId={folder?.id ?? null} />}
     </main>
   );
 }
@@ -51,7 +65,7 @@ function Preview({ segments }) {
 const PAGE = 30;
 const fmtCount = n => n.toLocaleString('ja-JP');
 
-function FromTed() {
+function FromTed({ folderId }) {
   const [catalog, setCatalog] = useState(null);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
@@ -77,7 +91,7 @@ function FromTed() {
   useEffect(() => { setLimit(PAGE); }, [query, length, japanese, sort]);
 
   if (selected) {
-    return <TalkDetail talk={selected} addedId={added.get(selected.slug)} onBack={() => setSelected(null)} />;
+    return <TalkDetail talk={selected} addedId={added.get(selected.slug)} folderId={folderId} onBack={() => setSelected(null)} />;
   }
 
   return (
@@ -134,7 +148,7 @@ function FromTed() {
   );
 }
 
-function TalkDetail({ talk, addedId, onBack }) {
+function TalkDetail({ talk, addedId, folderId, onBack }) {
   const [state, setState] = useState({ status: 'loading' });
   const [saving, setSaving] = useState(false);
 
@@ -148,7 +162,9 @@ function TalkDetail({ talk, addedId, onBack }) {
 
   async function save() {
     setSaving(true);
+    warmUpTranslator(state.segments.some(s => !s.ja));
     const m = await createMaterial({
+      folderId,
       kind: 'ted',
       slug: talk.slug,
       stream: talk.stream,
@@ -180,7 +196,11 @@ function TalkDetail({ talk, addedId, onBack }) {
       {state.status === 'ready' && (
         <>
           <p className="field-note">
-            {state.hasJapanese ? 'TEDの日本語訳があります（ボランティアの翻訳者による訳）' : 'TEDの日本語訳はありません。和訳は機械翻訳になります'}
+            {state.hasJapanese
+              ? 'TEDの日本語訳があります（ボランティアの翻訳者による訳）'
+              : canTranslateOnDevice()
+                ? 'TEDの日本語訳はありません。追加すると機械翻訳で和訳を作ります'
+                : 'TEDの日本語訳はありません。このブラウザでは和訳を自動で作れないので、和訳ありのトークがおすすめです'}
           </p>
           <Preview segments={state.segments} />
         </>
@@ -201,7 +221,7 @@ const STAGE_TEXT = {
   transcribe: '文字起こししています',
 };
 
-function FromFile() {
+function FromFile({ folderId }) {
   const [file, setFile] = useState(null);
   const [title, setTitle] = useState('');
   const [progress, setProgress] = useState(null);
@@ -250,7 +270,9 @@ function FromFile() {
   }
 
   async function save() {
+    warmUpTranslator(true);
     const m = await createMaterial({
+      folderId,
       kind: 'file',
       title: title.trim() || file.name,
       mediaType: file.type.startsWith('video/') ? 'video' : 'audio',
