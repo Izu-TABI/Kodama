@@ -20,8 +20,9 @@ const smooth = () =>
   !matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // `within`: the same screen with other contents (another folder), which only
-// cross-fades so that what stays the same doesn't move.
-export function changePage(update, { within = false } = {}) {
+// cross-fades so that what stays the same doesn't move. `wait: false` for a
+// change that is complete at once (the theme).
+export function changePage(update, { within = false, wait = true } = {}) {
   if (!smooth()) {
     flushSync(update);
     return;
@@ -29,7 +30,7 @@ export function changePage(update, { within = false } = {}) {
   const root = document.documentElement;
   root.dataset.transition = within ? 'within' : 'page';
   const transition = document.startViewTransition(async () => {
-    const ready = new Promise(resolve => {
+    const ready = wait && new Promise(resolve => {
       release = resolve;
       setTimeout(resolve, WAIT);
     });

@@ -17,6 +17,8 @@ const paths = {
   disclosure: <path d="M6 4l4.5 4L6 12z" />,
   check: <path d="M3.5 8.5l3 3 6-7" {...line} strokeWidth="1.7" />,
   more: <><circle cx="3.5" cy="8" r="1.3" /><circle cx="8" cy="8" r="1.3" /><circle cx="12.5" cy="8" r="1.3" /></>,
+  moon: <path d="M13.31 9.42A5.5 5.5 0 1 1 6.58 2.69 4.8 4.8 0 0 0 13.31 9.42z" {...line} strokeWidth="1.3" strokeLinejoin="round" />,
+  sun: <><circle cx="8" cy="8" r="2.9" {...line} strokeWidth="1.3" /><path d="M8 1.4v1.7M8 12.9v1.7M1.4 8h1.7M12.9 8h1.7M3.33 3.33l1.21 1.21M11.46 11.46l1.21 1.21M3.33 12.67l1.21-1.21M11.46 4.54l1.21-1.21" {...line} strokeWidth="1.3" strokeLinecap="round" /></>,
 };
 
 export default function Icon({ name, size = 16 }) {

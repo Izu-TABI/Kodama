@@ -11,6 +11,7 @@ import { usePrefs } from '../lib/prefs.js';
 import { pageReady } from '../lib/transition.js';
 import Icon from '../components/Icon.jsx';
 import Segmented from '../components/Segmented.jsx';
+import ThemeToggle from '../components/ThemeToggle.jsx';
 import LookupPopover from '../components/LookupPopover.jsx';
 
 // Pause between repeats of the same sentence.
@@ -522,9 +523,12 @@ export default function Practice({ id, initialIndex }) {
       <aside className="stage">
         <header className="masthead">
           <a className="back" href={m.folderId ? `#/f/${m.folderId}` : '#/'}><Icon name="back" size={14} />教材</a>
-          <button className="settings-toggle" onClick={() => setSettingsOpen(o => !o)} aria-expanded={settingsOpen}>
-            {settingsOpen ? '設定を閉じる' : '設定'}
-          </button>
+          <div className="masthead-tools">
+            <button className="settings-toggle" onClick={() => setSettingsOpen(o => !o)} aria-expanded={settingsOpen}>
+              {settingsOpen ? '設定を閉じる' : '設定'}
+            </button>
+            <ThemeToggle />
+          </div>
         </header>
         <div className="title-row">
           <h1 className="practice-title">{m.title || '　'}</h1>

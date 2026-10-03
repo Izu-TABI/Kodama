@@ -7,6 +7,7 @@ import { canTranslateOnDevice, warmUpTranslator } from '../lib/translate.js';
 import { go } from '../App.jsx';
 import { changePage, pageReady } from '../lib/transition.js';
 import Icon from '../components/Icon.jsx';
+import ThemeToggle from '../components/ThemeToggle.jsx';
 import Segmented from '../components/Segmented.jsx';
 
 const PAGE = 30;
@@ -24,6 +25,7 @@ export default function AddMaterial({ folderId }) {
     <main className="page add">
       <header className="masthead">
         <a className="back" href={back}><Icon name="back" size={14} />教材</a>
+        <ThemeToggle />
       </header>
       <h1 className="page-title">TEDから追加</h1>
       {path && <p className="field-note destination">追加先：{path}</p>}

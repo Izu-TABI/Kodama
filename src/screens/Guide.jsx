@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from 'react';
 import Icon from '../components/Icon.jsx';
+import ThemeToggle from '../components/ThemeToggle.jsx';
 import { senses } from '../lib/dict.js';
 import { queueImport } from '../lib/imports.js';
 import { filesFromInput } from '../lib/files.js';
@@ -34,11 +35,10 @@ export default function Guide({ onPickFiles, dropProps, standalone }) {
             if ((await queueImport(found, null)).queued) go('');
           }} />
       )}
-      {standalone && (
-        <header className="masthead">
-          <a className="back" href="#/"><Icon name="back" size={14} />教材</a>
-        </header>
-      )}
+      <header className={`masthead ${standalone ? '' : 'masthead-end'}`}>
+        {standalone && <a className="back" href="#/"><Icon name="back" size={14} />教材</a>}
+        <ThemeToggle />
+      </header>
 
       <section className="guide-hero">
         <h1>Kodama</h1>

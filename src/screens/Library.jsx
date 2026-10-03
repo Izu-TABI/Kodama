@@ -14,6 +14,7 @@ import { readActivity, summarize, calendar } from '../lib/activity.js';
 import { fmtTime } from '../lib/segments.js';
 import { go } from '../App.jsx';
 import Icon from '../components/Icon.jsx';
+import ThemeToggle from '../components/ThemeToggle.jsx';
 import MoveDialog from '../components/MoveDialog.jsx';
 import Guide from './Guide.jsx';
 
@@ -389,7 +390,10 @@ export default function Library({ folderId = null, view = 'files' }) {
     <main className="page library" onClick={() => { setMenu(null); if (!touch) setSelected(new Set()); }}>
       <header className="masthead">
         <span className="wordmark">Kodama</span>
-        <a className="text-button" href="#/guide">使い方</a>
+        <div className="masthead-tools">
+          <a className="text-button" href="#/guide">使い方</a>
+          <ThemeToggle />
+        </div>
       </header>
 
       {fileField}
