@@ -11,8 +11,8 @@
   /* Interface and Japanese in Noto Sans JP; English sentences and titles in Noto Sans. */
   --sans: 'Noto Sans JP', -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Yu Gothic UI', sans-serif;
   --en: 'Noto Sans', 'Noto Sans JP', -apple-system, BlinkMacSystemFont, sans-serif;
-  /* Large figures (the streak, the guide's steps); only the digits are loaded. */
-  --figure: 'Noto Serif Display', 'Noto Sans', serif;
+  /* Large figures (the streak, the guide's steps): plain, even digits; only the digits are loaded. */
+  --figure: 'Inter', -apple-system, BlinkMacSystemFont, 'Noto Sans', sans-serif;
   /* Corners grow with the size of the thing: small parts, controls, surfaces. Never pill-shaped. */
   --radius-s: 4px; --radius: 6px; --radius-l: 8px;
   /* Spacing: 4–12 inside a group, 16–32 between groups, 48–96 between sections. */
@@ -35,14 +35,19 @@
 }
 
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; scrollbar-gutter: stable; }
 body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
   font: 14px/1.6 var(--sans);
   -webkit-font-smoothing: antialiased;
-  scrollbar-gutter: stable;
+  /* Only what you may want to copy can be selected (see below). */
+  -webkit-user-select: none; user-select: none;
+}
+/* Sentences, translations, dictionary entries and talk titles. */
+.script, .ja, .popover, .practice-title, .found-title, .preview, input, textarea {
+  -webkit-user-select: text; user-select: text;
 }
 button, input { font: inherit; color: inherit; }
 a { color: inherit; }
@@ -185,13 +190,27 @@ button:focus-visible, a:focus-visible {
 .tool-count { font-size: 12px; color: var(--muted); }
 .notice { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
 
-.file-list { margin-top: var(--s4); min-height: 140px; border-radius: var(--radius-l); }
-.file-list.drop { outline: 1px dashed var(--ink); outline-offset: 6px; }
+/* The library fills the window and only the list scrolls, so opening or
+   expanding a folder never moves the page around it. */
+.page.library { height: 100dvh; display: flex; flex-direction: column; padding-bottom: 0; }
+.library > * { flex: none; }
+.list-scroll {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  scrollbar-gutter: stable; margin: var(--s4) -6px 0; padding: 0 6px var(--s6);
+  scroll-padding-top: 40px; border-radius: var(--radius-l);
+  scrollbar-width: thin; scrollbar-color: var(--faint) transparent;
+}
+.list-scroll.drop { outline: 1px dashed var(--ink); outline-offset: -1px; }
+/* Too short a window for that: the page scrolls as a whole again. */
+@media (max-height: 600px) {
+  .page.library { height: auto; padding-bottom: var(--s8); }
+  .list-scroll { overflow: visible; }
+}
 .file-head, .file-row {
   display: grid; grid-template-columns: minmax(0, 1fr) 4.5em 5.5em 6em 32px;
   align-items: center; column-gap: 14px;
 }
-.file-head { padding: 0 8px 6px; border-bottom: 1px solid var(--rule); }
+.file-head { padding: 0 8px 6px; border-bottom: 1px solid var(--rule); position: sticky; top: 0; z-index: 2; background: var(--paper); }
 .file-head .cell { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; }
 .cell.head { border: 0; background: none; padding: 0; text-align: left; cursor: pointer; }
 .cell.head:hover, .cell.head.on { color: var(--ink); }
@@ -262,7 +281,7 @@ button.disclosure { cursor: pointer; }
 
 .imports { margin-top: var(--s5); }
 .imports-head { display: flex; gap: 16px; align-items: baseline; margin: 0 0 6px; font-size: 12px; color: var(--muted); }
-.imports ol { list-style: none; padding: 0; margin: 0; }
+.imports ol { list-style: none; padding: 0; margin: 0; max-height: 168px; overflow-y: auto; overscroll-behavior: contain; }
 .import { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 16px; align-items: baseline; padding: 4px 0; font-size: 13px; }
 .import-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .import-place { margin-left: 10px; font-size: 11px; color: var(--muted); }

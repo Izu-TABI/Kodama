@@ -20,6 +20,8 @@ import Guide from './Guide.jsx';
 const SORT_KEY = 'shadowing:sort';
 const EXPANDED_KEY = 'shadowing:expanded';
 const DRAG_TYPE = 'application/x-shadowing-items';
+// Only the list scrolls (the page stays put); where each place's list was scrolled.
+const listScroll = new Map();
 
 const readJson = (key, fallback) => {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
@@ -104,13 +106,19 @@ export default function Library({ folderId = null, view = 'files' }) {
 
   // Once the list is on screen: return to where this place was scrolled, then show it.
   const restored = useRef(null);
+  const scrollRef = useRef(null);
   useLayoutEffect(() => {
     if (!materials || restored.current === location.hash) return;
     restored.current = location.hash;
     const y = scrollMemory.get(location.hash);
     if (y) window.scrollTo(0, y);
+    if (scrollRef.current) scrollRef.current.scrollTop = listScroll.get(location.hash) ?? 0;
     pageReady();
   }, [materials, folderId, view]);
+  const onListScroll = e => {
+    if (restored.current) listScroll.set(restored.current, e.currentTarget.scrollTop);
+    setMenu(m => (m ? null : m));
+  };
 
   // A new place starts with nothing selected.
   useEffect(() => {
@@ -444,53 +452,60 @@ export default function Library({ folderId = null, view = 'files' }) {
           <ImportPanel items={imports} placeName={placeName} />
 
           <div
-            className={`file-list ${dropOn === 'here' ? 'drop' : ''}`}
-            ref={listRef}
-            role="listbox"
-            aria-multiselectable="true"
-            aria-label="教材"
+            className={`list-scroll ${dropOn === 'here' ? 'drop' : ''}`}
+            ref={scrollRef}
+            onScroll={onListScroll}
             {...(favorites ? {} : dropTarget(here, 'here'))}
           >
-            <div className="file-head" aria-hidden="true">
-              <SortHead label="名前" k="name" sort={sort} onSort={changeSort} className="name" />
-              <span className="cell kind">種類</span>
-              <SortHead label="長さ" k="length" sort={sort} onSort={changeSort} className="length" />
-              <SortHead label="最終練習" k="practiced" sort={sort} onSort={changeSort} className="practiced" />
-              <span className="cell star-cell" />
+            <div className="file-list" ref={listRef} role="listbox" aria-multiselectable="true" aria-label="教材">
+              <div className="file-head" aria-hidden="true">
+                <SortHead label="名前" k="name" sort={sort} onSort={changeSort} className="name" />
+                <span className="cell kind">種類</span>
+                <SortHead label="長さ" k="length" sort={sort} onSort={changeSort} className="length" />
+                <SortHead label="最終練習" k="practiced" sort={sort} onSort={changeSort} className="practiced" />
+                <span className="cell star-cell" />
+              </div>
+              {rows.map((row, i) => (
+                <FileRow
+                  key={row.key}
+                  row={row}
+                  selected={selected.has(row.key)}
+                  selectMode={touch && selectMode}
+                  expanded={row.kind === 'folder' && expanded.has(row.item.id)}
+                  count={row.kind === 'folder' ? countInside(folders, materials, row.item.id) : 0}
+                  renaming={renaming === row.key}
+                  drop={dropOn === row.key}
+                  draggable={!touch && renaming !== row.key}
+                  place={favorites && row.item.folderId ? placeName(row.item.folderId) : ''}
+                  onClick={e => onRowClick(e, row, i)}
+                  onDoubleClick={() => !touch && open(row)}
+                  onContextMenu={e => onContextMenu(e, row)}
+                  onDragStart={e => onDragStart(e, row)}
+                  dropProps={row.kind === 'folder' ? dropTarget(row.item.id, row.key)
+                    : row.depth > 0 ? dropTarget(row.item.folderId, folderKey(row.item.folderId)) : null}
+                  onToggle={() => toggleExpand(row.item.id)}
+                  onFavorite={() => setFavorite([row.key], !row.item.favorite)}
+                  onRename={name => commitRename(row.key, name)}
+                  onCancelRename={() => setRenaming(null)}
+                />
+              ))}
+              {rows.length === 0 && (
+                <p className="empty">
+                  {favorites
+                    ? '教材の ☆ を押すと、ここに集まります。'
+                    : touch
+                      ? 'このフォルダは空です。「ファイルを読み込む」か「TEDから追加」で入れられます。'
+                      : 'このフォルダは空です。ファイルやフォルダをここにドロップするか、「ファイルを読み込む」「TEDから追加」で入れられます。'}
+                </p>
+              )}
             </div>
-            {rows.map((row, i) => (
-              <FileRow
-                key={row.key}
-                row={row}
-                selected={selected.has(row.key)}
-                selectMode={touch && selectMode}
-                expanded={row.kind === 'folder' && expanded.has(row.item.id)}
-                count={row.kind === 'folder' ? countInside(folders, materials, row.item.id) : 0}
-                renaming={renaming === row.key}
-                drop={dropOn === row.key}
-                draggable={!touch && renaming !== row.key}
-                place={favorites && row.item.folderId ? placeName(row.item.folderId) : ''}
-                onClick={e => onRowClick(e, row, i)}
-                onDoubleClick={() => !touch && open(row)}
-                onContextMenu={e => onContextMenu(e, row)}
-                onDragStart={e => onDragStart(e, row)}
-                dropProps={row.kind === 'folder' ? dropTarget(row.item.id, row.key)
-                  : row.depth > 0 ? dropTarget(row.item.folderId, folderKey(row.item.folderId)) : null}
-                onToggle={() => toggleExpand(row.item.id)}
-                onFavorite={() => setFavorite([row.key], !row.item.favorite)}
-                onRename={name => commitRename(row.key, name)}
-                onCancelRename={() => setRenaming(null)}
-              />
-            ))}
-            {rows.length === 0 && (
-              <p className="empty">
-                {favorites
-                  ? '教材の ☆ を押すと、ここに集まります。'
-                  : touch
-                    ? 'このフォルダは空です。「ファイルを読み込む」か「TEDから追加」で入れられます。'
-                    : 'このフォルダは空です。ファイルやフォルダをここにドロップするか、「ファイルを読み込む」「TEDから追加」で入れられます。'}
+            <footer className="credits">
+              <p>
+                TEDのトークは、TEDがCC BY-NC-ND 4.0で公開している動画と字幕を、TEDの配信からそのまま再生しています。このアプリはTEDとは関係ありません。
+                英和辞書はEJDict-hand（パブリックドメイン）を使っています。
               </p>
-            )}
+              <p>教材・録音・和訳・練習の記録は、このブラウザの中にだけ保存されます。</p>
+            </footer>
           </div>
         </>
       )}
@@ -515,14 +530,6 @@ export default function Library({ folderId = null, view = 'files' }) {
           onClose={() => setMoving(null)}
         />
       )}
-
-      <footer className="credits">
-        <p>
-          TEDのトークは、TEDがCC BY-NC-ND 4.0で公開している動画と字幕を、TEDの配信からそのまま再生しています。このアプリはTEDとは関係ありません。
-          英和辞書はEJDict-hand（パブリックドメイン）を使っています。
-        </p>
-        <p>教材・録音・和訳・練習の記録は、このブラウザの中にだけ保存されます。</p>
-      </footer>
     </main>
   );
 }
