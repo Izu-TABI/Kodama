@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "kodama-shadowing",
     "public": "dist",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "headers": [
@@ -9,6 +10,10 @@
       },
       {
         "source": "**/*.@(html|webmanifest)",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+      },
+      {
+        "regex": "^/$",
         "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
       },
       {
